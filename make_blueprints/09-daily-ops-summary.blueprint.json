@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "blueprint_version": 1,
+    "name": "09 - Daily Ops Summary",
+    "description": "Template blueprint generated from shared Lead Management System plan.",
+    "scenario": {
+      "sequential": false,
+      "auto_commit": true,
+      "max_errors": 3,
+      "schedule": {
+        "type": "daily",
+        "at": "07:30",
+        "timezone": "America/New_York"
+      }
+    }
+  },
+  "subflows": [
+    {
+      "name": "Main flow",
+      "flow": [
+        {
+          "id": 1,
+          "module": "scheduler:daily",
+          "version": 1,
+          "note": "Run daily at 07:30",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 2,
+          "module": "google-sheets:searchRows",
+          "version": 1,
+          "note": "Collect rows for leakage buckets",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "LEADS_SHEET"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 3,
+          "module": "tools:aggregator",
+          "version": 1,
+          "note": "Build counts for each KPI bucket",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 4,
+          "module": "twilio:sendMessage",
+          "version": 1,
+          "note": "Send daily summary to dispatch leadership",
+          "parameters": {},
+          "mapper": {}
+        }
+      ]
+    }
+  ],
+  "placeholders": {
+    "connections": [
+      "google_sheets_connection",
+      "twilio_connection",
+      "make_data_store_connection"
+    ],
+    "ids_to_replace": [
+      "SPREADSHEET_ID",
+      "LEADS_SHEET",
+      "USERS_SHEET",
+      "AUDIT_LOG_SHEET",
+      "DATA_STORE_ID"
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "metadata": {
+    "blueprint_version": 1,
+    "name": "04 - Unclaimed Lead Escalation",
+    "description": "Template blueprint generated from shared Lead Management System plan.",
+    "scenario": {
+      "sequential": false,
+      "auto_commit": true,
+      "max_errors": 3,
+      "schedule": {
+        "type": "interval",
+        "value": 5,
+        "unit": "minutes"
+      }
+    }
+  },
+  "subflows": [
+    {
+      "name": "Main flow",
+      "flow": [
+        {
+          "id": 1,
+          "module": "scheduler:interval",
+          "version": 1,
+          "note": "Run every 5 minutes",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 2,
+          "module": "google-sheets:searchRows",
+          "version": 1,
+          "note": "Find CLAIM_OPEN leads older than timeout",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "LEADS_SHEET"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 3,
+          "module": "flow:iterator",
+          "version": 1,
+          "note": "Loop through stale leads",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 4,
+          "module": "twilio:sendMessage",
+          "version": 1,
+          "note": "Send escalation SMS",
+          "parameters": {},
+          "mapper": {
+            "to": "{{settings.escalation_phone}}",
+            "body": "URGENT: Unclaimed lead {{3.lead_id}} {{3.customer_name}} | {{3.customer_phone}}"
+          }
+        },
+        {
+          "id": 5,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "Append escalation note + last_event_at",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 6,
+          "module": "google-sheets:addRow",
+          "version": 1,
+          "note": "Write audit entry",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "AUDIT_LOG_SHEET"
+          },
+          "mapper": {}
+        }
+      ]
+    }
+  ],
+  "placeholders": {
+    "connections": [
+      "google_sheets_connection",
+      "twilio_connection",
+      "make_data_store_connection"
+    ],
+    "ids_to_replace": [
+      "SPREADSHEET_ID",
+      "LEADS_SHEET",
+      "USERS_SHEET",
+      "AUDIT_LOG_SHEET",
+      "DATA_STORE_ID"
+    ]
+  }
+}

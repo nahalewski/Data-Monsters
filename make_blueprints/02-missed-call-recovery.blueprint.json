@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "blueprint_version": 1,
+    "name": "02 - Missed Call Recovery",
+    "description": "Template blueprint generated from shared Lead Management System plan.",
+    "scenario": {
+      "sequential": false,
+      "auto_commit": true,
+      "max_errors": 3,
+      "schedule": {
+        "type": "immediately"
+      }
+    }
+  },
+  "subflows": [
+    {
+      "name": "Main flow",
+      "flow": [
+        {
+          "id": 1,
+          "module": "webhooks:customWebhook",
+          "version": 1,
+          "note": "Trigger: missed_call webhook",
+          "parameters": {
+            "webhook_name": "missed_call"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 2,
+          "module": "twilio:sendMessage",
+          "version": 1,
+          "note": "Auto-reply to missed caller",
+          "parameters": {},
+          "mapper": {
+            "to": "{{1.customer_phone}}",
+            "body": "Hey, this is Appalachian Technologies \u2014 we just missed your call. What can we help you with?"
+          }
+        },
+        {
+          "id": 3,
+          "module": "google-sheets:searchRows",
+          "version": 1,
+          "note": "Find open lead by phone",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "LEADS_SHEET"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 4,
+          "module": "flow:router",
+          "version": 1,
+          "note": "Branch create vs update existing",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 5,
+          "module": "google-sheets:addRow",
+          "version": 1,
+          "note": "Route A: create new missed-call lead",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 6,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "Route B: update notes/last_event_at",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 7,
+          "module": "google-sheets:addRow",
+          "version": 1,
+          "note": "Write audit log entry",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "AUDIT_LOG_SHEET"
+          },
+          "mapper": {}
+        }
+      ]
+    }
+  ],
+  "placeholders": {
+    "connections": [
+      "google_sheets_connection",
+      "twilio_connection",
+      "make_data_store_connection"
+    ],
+    "ids_to_replace": [
+      "SPREADSHEET_ID",
+      "LEADS_SHEET",
+      "USERS_SHEET",
+      "AUDIT_LOG_SHEET",
+      "DATA_STORE_ID"
+    ]
+  }
+}

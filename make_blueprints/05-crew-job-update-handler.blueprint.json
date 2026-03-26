@@ -1,0 +1,113 @@
+{
+  "metadata": {
+    "blueprint_version": 1,
+    "name": "05 - Crew Job Update Handler",
+    "description": "Template blueprint generated from shared Lead Management System plan.",
+    "scenario": {
+      "sequential": false,
+      "auto_commit": true,
+      "max_errors": 3,
+      "schedule": {
+        "type": "immediately"
+      }
+    }
+  },
+  "subflows": [
+    {
+      "name": "Main flow",
+      "flow": [
+        {
+          "id": 1,
+          "module": "webhooks:customWebhook",
+          "version": 1,
+          "note": "Trigger: crew_update webhook",
+          "parameters": {
+            "webhook_name": "crew_update"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 2,
+          "module": "tools:textParser",
+          "version": 1,
+          "note": "Parse START/PAUSE/DONE + lead_id",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 3,
+          "module": "google-sheets:searchRows",
+          "version": 1,
+          "note": "Find lead by lead_id",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "LEADS_SHEET"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 4,
+          "module": "flow:router",
+          "version": 1,
+          "note": "Route START / PAUSE / DONE",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 5,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "START: set job_status IN_PROGRESS + job_started_at",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 6,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "PAUSE: append note and keep/set DISPATCHED",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 7,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "DONE: set DONE_UNCONFIRMED + job_completed_at",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 8,
+          "module": "data-store:addOrReplaceRecord",
+          "version": 1,
+          "note": "DONE: awaiting_completion_reply=true",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 9,
+          "module": "twilio:sendMessage",
+          "version": 1,
+          "note": "DONE: ask customer for completion confirmation",
+          "parameters": {},
+          "mapper": {}
+        }
+      ]
+    }
+  ],
+  "placeholders": {
+    "connections": [
+      "google_sheets_connection",
+      "twilio_connection",
+      "make_data_store_connection"
+    ],
+    "ids_to_replace": [
+      "SPREADSHEET_ID",
+      "LEADS_SHEET",
+      "USERS_SHEET",
+      "AUDIT_LOG_SHEET",
+      "DATA_STORE_ID"
+    ]
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "metadata": {
+    "blueprint_version": 1,
+    "name": "08 - Invoice and Payment Closure",
+    "description": "Template blueprint generated from shared Lead Management System plan.",
+    "scenario": {
+      "sequential": false,
+      "auto_commit": true,
+      "max_errors": 3,
+      "schedule": {
+        "type": "immediately"
+      }
+    }
+  },
+  "subflows": [
+    {
+      "name": "Main flow",
+      "flow": [
+        {
+          "id": 1,
+          "module": "webhooks:customWebhook",
+          "version": 1,
+          "note": "Trigger invoice/payment status updates",
+          "parameters": {
+            "webhook_name": "payment_sync"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 2,
+          "module": "google-sheets:searchRows",
+          "version": 1,
+          "note": "Find lead row by lead_id",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "LEADS_SHEET"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 3,
+          "module": "flow:router",
+          "version": 1,
+          "note": "Route INVOICED / PARTIAL / PAID",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 4,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "Update invoice_status + invoice_amount",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 5,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "Update payment_status + payment_amount",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 6,
+          "module": "google-sheets:updateRow",
+          "version": 1,
+          "note": "If paid and confirmed set job_status CLOSED",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 7,
+          "module": "twilio:sendMessage",
+          "version": 1,
+          "note": "Optional payment receipt SMS",
+          "parameters": {},
+          "mapper": {}
+        },
+        {
+          "id": 8,
+          "module": "google-sheets:addRow",
+          "version": 1,
+          "note": "Write audit entry",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "AUDIT_LOG_SHEET"
+          },
+          "mapper": {}
+        }
+      ]
+    }
+  ],
+  "placeholders": {
+    "connections": [
+      "google_sheets_connection",
+      "twilio_connection",
+      "make_data_store_connection"
+    ],
+    "ids_to_replace": [
+      "SPREADSHEET_ID",
+      "LEADS_SHEET",
+      "USERS_SHEET",
+      "AUDIT_LOG_SHEET",
+      "DATA_STORE_ID"
+    ]
+  }
+}

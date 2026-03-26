@@ -1,0 +1,91 @@
+{
+  "metadata": {
+    "blueprint_version": 1,
+    "name": "01 - Lead Intake Hub",
+    "description": "Template blueprint generated from shared Lead Management System plan.",
+    "scenario": {
+      "sequential": false,
+      "auto_commit": true,
+      "max_errors": 3,
+      "schedule": {
+        "type": "immediately"
+      }
+    }
+  },
+  "subflows": [
+    {
+      "name": "Main flow",
+      "flow": [
+        {
+          "id": 1,
+          "module": "webhooks:customWebhook",
+          "version": 1,
+          "note": "Trigger: lead_intake webhook",
+          "parameters": {
+            "webhook_name": "lead_intake"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 2,
+          "module": "tools:setVariables",
+          "version": 1,
+          "note": "Set lead_id, created_at, normalized_phone",
+          "parameters": {},
+          "mapper": {
+            "lead_id": "{{formatDate(now; \"YYMMDD-HHmmss\")}}-{{random(100;999)}}",
+            "created_at": "{{now}}",
+            "normalized_phone": "{{replaceRegex(1.customer_phone; \"[^0-9+]\"; \"\")}}"
+          }
+        },
+        {
+          "id": 3,
+          "module": "google-sheets:addRow",
+          "version": 1,
+          "note": "Insert new lead row",
+          "parameters": {
+            "spreadsheet_id": "SPREADSHEET_ID",
+            "sheet_name": "LEADS_SHEET"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 4,
+          "module": "data-store:addOrReplaceRecord",
+          "version": 1,
+          "note": "Upsert lead_sessions record",
+          "parameters": {
+            "data_store_id": "DATA_STORE_ID",
+            "key": "{{2.lead_id}}"
+          },
+          "mapper": {}
+        },
+        {
+          "id": 5,
+          "module": "twilio:sendMessage",
+          "version": 1,
+          "note": "Notify dispatcher and optionally customer",
+          "parameters": {},
+          "mapper": {
+            "to": "{{settings.dispatch_phone}}",
+            "body": "NEW LEAD {{2.lead_id}} | {{1.customer_name}} | {{1.customer_phone}}"
+          }
+        }
+      ]
+    }
+  ],
+  "placeholders": {
+    "connections": [
+      "google_sheets_connection",
+      "twilio_connection",
+      "make_data_store_connection"
+    ],
+    "ids_to_replace": [
+      "SPREADSHEET_ID",
+      "LEADS_SHEET",
+      "USERS_SHEET",
+      "AUDIT_LOG_SHEET",
+      "DATA_STORE_ID"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+morning:
+  start: "05:00"
+  end: "11:30"
+  cooldown_minutes: 120
+recognition:
+  stable_frames_required: 5
+  match_tolerance: 0.5
+camera:
+  index: 0
+  width: 640
+  height: 480
+ui:
+  expression_poll_ms: 250

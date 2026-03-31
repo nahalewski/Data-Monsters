@@ -42,9 +42,23 @@ body {
   text-decoration: none;
 }
 
-.brand-mark {
-  color: var(--accent);
-  transform: translateY(-1px);
+.nav-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 0.45rem;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
+.brand-name {
+  white-space: nowrap;
+}
+
+.hero-logo {
+  width: clamp(160px, 30vw, 220px);
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  margin-bottom: 1.25rem;
 }
 
 .hero {
@@ -202,6 +216,10 @@ h2 {
   .nav {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .brand-name {
+    font-size: 0.95rem;
   }
 
   .button {

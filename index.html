@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Persona Hub AI</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Persona Hub AI</h1>
+        <p>Pick an AI persona and start chatting.</p>
+      </div>
+      <button id="themeToggle" class="ghost-btn" aria-label="Toggle theme">🌙</button>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>AI Personas</h2>
+          <div id="personaList" class="persona-list" role="list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Connection</h2>
+          <label for="apiKey">OpenAI API Key</label>
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+
+          <label for="model">Model</label>
+          <select id="model">
+            <option value="gpt-4o-mini">gpt-4o-mini</option>
+            <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+            <option value="gpt-4.1">gpt-4.1</option>
+          </select>
+
+          <label class="checkbox-row">
+            <input id="mockMode" type="checkbox" />
+            Use demo mode (no API calls)
+          </label>
+
+          <p class="note">
+            Your key stays in this browser tab only and is never sent anywhere except the OpenAI API.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Create Custom Persona</h2>
+          <label for="customName">Name</label>
+          <input id="customName" type="text" placeholder="e.g., Startup Advisor" />
+
+          <label for="customPrompt">Personality Prompt</label>
+          <textarea
+            id="customPrompt"
+            rows="4"
+            placeholder="You are a practical startup advisor focused on MVP validation..."
+          ></textarea>
+
+          <button id="addPersonaBtn">Add Persona</button>
+        </section>
+      </aside>
+
+      <section class="chat-area">
+        <div class="panel chat-panel">
+          <div class="chat-header">
+            <div>
+              <h2 id="activePersonaName">Select a Persona</h2>
+              <p id="activePersonaDesc">Each persona has a different response style.</p>
+            </div>
+            <button id="clearChatBtn" class="ghost-btn">Clear Chat</button>
+          </div>
+
+          <div id="messages" class="messages" aria-live="polite"></div>
+
+          <form id="chatForm" class="chat-input-row">
+            <textarea
+              id="userInput"
+              rows="2"
+              placeholder="Type your message..."
+              required
+            ></textarea>
+            <button type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <template id="messageTemplate">
+      <div class="message">
+        <div class="meta"></div>
+        <div class="bubble"></div>
+      </div>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

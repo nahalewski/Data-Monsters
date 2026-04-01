@@ -1,0 +1,9 @@
+<svg width="560" height="560" viewBox="0 0 560 560" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Appalachian Technologies logo</title>
+  <desc id="desc">White mountain mark and company name on black background.</desc>
+  <rect width="560" height="560" fill="#050505"/>
+  <path d="M58 250L150 160L195 188L280 105L356 180L410 162L500 252L428 242L382 204L328 224L282 171L216 240L188 220L132 252L58 250Z" fill="#F3F4F6"/>
+  <path d="M224 290H103V414H128V371H199V414H224V290ZM199 347H128V314H199V347Z" fill="none"/>
+  <text x="280" y="338" text-anchor="middle" fill="#F3F4F6" font-family="Inter, Arial, sans-serif" font-size="66" font-weight="800" letter-spacing="2">APPALACHIAN</text>
+  <text x="280" y="402" text-anchor="middle" fill="#F3F4F6" font-family="Inter, Arial, sans-serif" font-size="52" font-weight="700" letter-spacing="8">TECHNOLOGIES</text>
+</svg>

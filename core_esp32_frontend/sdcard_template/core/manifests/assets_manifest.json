@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "assets": [
+    {"id": "core_icon", "path": "/core/assets/images/core_app_icon.png", "type": "image"},
+    {"id": "face_happy", "path": "/core/assets/images/face_happy.png", "type": "image"}
+  ]
+}

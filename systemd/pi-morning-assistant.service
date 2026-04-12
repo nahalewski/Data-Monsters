@@ -1,0 +1,16 @@
+[Unit]
+Description=Raspberry Pi Morning Assistant
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+ExecStart=__APP_DIR__/.venv/bin/python scripts/run_backend.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

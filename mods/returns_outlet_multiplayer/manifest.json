@@ -1,0 +1,20 @@
+{
+  "id": "returns_outlet_multiplayer",
+  "name": "Returns Outlet Multiplayer",
+  "version": "0.1.0",
+  "game": "Returns Outlet Simulator",
+  "entrypoint": "server.py",
+  "network": {
+    "transport": "tcp_json_lines",
+    "default_host": "127.0.0.1",
+    "default_port": 8765,
+    "max_players": 8,
+    "tick_rate_hz": 20
+  },
+  "features": [
+    "shared outlet floor sessions",
+    "authoritative inventory and pallet claims",
+    "player join/leave replication",
+    "chat and ready states"
+  ]
+}

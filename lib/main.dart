@@ -208,11 +208,12 @@ class _TruckIllustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 1.35,
-      child: CustomPaint(
-        painter: _TruckPainter(),
-        child: const SizedBox.expand(),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Image.asset(
+        'assets/images/truck.webp',
+        fit: BoxFit.contain,
+        semanticLabel: 'Orange pickup truck loaded with moving boxes',
       ),
     );
   }
@@ -312,50 +313,4 @@ class _CallToAction extends StatelessWidget {
       ),
     );
   }
-}
-
-class _TruckPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final orange = Paint()..color = const Color(0xFFE96F21);
-    final dark = Paint()..color = const Color(0xFF151515);
-    final glass = Paint()..color = const Color(0xFF9ED0E8);
-    final box = Paint()..color = const Color(0xFFB58A55);
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .08, size.height * .44, size.width * .72, size.height * .2), const Radius.circular(18)),
-      orange,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .22, size.height * .25, size.width * .32, size.height * .25), const Radius.circular(20)),
-      orange,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .28, size.height * .29, size.width * .18, size.height * .15), const Radius.circular(10)),
-      glass,
-    );
-    canvas.drawRect(Rect.fromLTWH(size.width * .58, size.height * .28, size.width * .18, size.height * .16), box);
-    canvas.drawRect(Rect.fromLTWH(size.width * .73, size.height * .34, size.width * .16, size.height * .12), box);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .13, size.height * .58, size.width * .18, size.height * .18), const Radius.circular(40)),
-      dark,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .62, size.height * .58, size.width * .18, size.height * .18), const Radius.circular(40)),
-      dark,
-    );
-    canvas.drawCircle(Offset(size.width * .22, size.height * .67), size.width * .055, Paint()..color = Colors.grey.shade500);
-    canvas.drawCircle(Offset(size.width * .71, size.height * .67), size.width * .055, Paint()..color = Colors.grey.shade500);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .05, size.height * .49, size.width * .18, size.height * .09), const Radius.circular(12)),
-      Paint()..color = Colors.white,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .06, size.height * .51, size.width * .09, size.height * .04), const Radius.circular(8)),
-      dark,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

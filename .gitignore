@@ -1,0 +1,9 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+pubspec.lock
+
+# Flutter SDK cloned by the Render build command
+_flutter/

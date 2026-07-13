@@ -87,13 +87,18 @@ class HomePage extends StatelessWidget {
                               )
                               .toList();
 
-                          return Flex(
+                          final cardsFlex = Flex(
                             direction: isWide ? Axis.horizontal : Axis.vertical,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: isWide
                                 ? paddedCards.map((card) => Expanded(child: card)).toList()
                                 : paddedCards,
                           );
+
+                          // The page scrolls vertically, so a horizontal row
+                          // has no height bound; IntrinsicHeight gives stretch
+                          // a finite extent (and equal-height cards).
+                          return isWide ? IntrinsicHeight(child: cardsFlex) : cardsFlex;
                         },
                       ),
                     ],
@@ -116,6 +121,9 @@ class _HeroSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
+      // Loosens the width constraint so the maxWidth cap below can
+      // take effect and the hero stays centered on wide screens.
+      alignment: Alignment.center,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFFF7B54B), Color(0xFFF59F2A)],

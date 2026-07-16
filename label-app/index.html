@@ -465,7 +465,7 @@
       <div class="panel-body">
         <label class="field">
           <span class="lbl">Text (multi-line)</span>
-          <textarea id="text" spellcheck="false">ASSET&#10;M511-0001</textarea>
+          <textarea id="text" spellcheck="false">MRN05-1-116-144&#10;spp412:mpo&#10;E/168/11,12</textarea>
         </label>
       </div>
     </div>
@@ -476,7 +476,7 @@
         <div class="row" style="margin-bottom:14px;">
           <label class="field" style="margin-bottom:0;">
             <span class="lbl">Font size (pt)</span>
-            <input type="number" id="fontSize" value="28" min="4" max="200" step="1" />
+            <input type="number" id="fontSize" value="12" min="4" max="200" step="1" />
           </label>
           <label class="field" style="margin-bottom:0;">
             <span class="lbl">Line spacing</span>
@@ -484,21 +484,33 @@
           </label>
         </div>
 
-        <label class="field">
-          <span class="lbl">Alignment</span>
-          <div class="seg" id="alignSeg">
-            <button data-align="left">Left</button>
-            <button data-align="center" class="on">Center</button>
-          </div>
-        </label>
+        <div class="row" style="margin-bottom:14px;">
+          <label class="field" style="margin-bottom:0;">
+            <span class="lbl">Font</span>
+            <select id="fontFamily">
+              <option value="mono" selected>Monospace</option>
+              <option value="sans">Sans-serif</option>
+            </select>
+          </label>
+          <label class="field" style="margin-bottom:0;">
+            <span class="lbl">Alignment</span>
+            <div class="seg" id="alignSeg">
+              <button data-align="left">Left</button>
+              <button data-align="center" class="on">Center</button>
+            </div>
+          </label>
+        </div>
 
-        <div class="row">
+        <div class="row" style="margin-bottom:10px;">
           <div class="toggle" id="boldToggle" style="flex:1;">
             <span class="lbl2">Bold</span><span class="switch"></span>
           </div>
           <div class="toggle" id="rotateToggle" style="flex:1;">
             <span class="lbl2">Rotate 90°</span><span class="switch"></span>
           </div>
+        </div>
+        <div class="toggle" id="flagToggle">
+          <span class="lbl2">Wraparound flag · duplicate</span><span class="switch"></span>
         </div>
       </div>
     </div>
@@ -598,6 +610,7 @@
     text: $('text'), fontSize: $('fontSize'), lineSpacing: $('lineSpacing'),
     copies: $('copies'), cutOption: $('cutOption'),
     alignSeg: $('alignSeg'), boldToggle: $('boldToggle'), rotateToggle: $('rotateToggle'),
+    flagToggle: $('flagToggle'), fontFamily: $('fontFamily'),
     preview: $('preview'), printCanvas: $('printCanvas'),
     labelFrame: $('labelFrame'), dimW: $('dimW'), dimH: $('dimH'),
     metaScreenPx: $('metaScreenPx'), metaPrintDpi: $('metaPrintDpi'), dpiTag: $('dpiTag'),
@@ -609,6 +622,8 @@
     align: 'center',
     bold: false,
     rotate: false,
+    flag: false,
+    font: 'mono',
     connected: false,
   };
 
@@ -801,30 +816,67 @@
       ctx.strokeRect(0.5, 0.5, wPx - 1, hPx - 1);
     }
 
-    // Text
+    // Text setup
     const lines = el.text.value.replace(/\r/g, '').split('\n');
-    const fontPt = Math.max(1, parseFloat(el.fontSize.value) || 28);
+    const fontPt = Math.max(1, parseFloat(el.fontSize.value) || 12);
     const spacing = Math.max(0.5, parseFloat(el.lineSpacing.value) || 1.1);
     // pt -> px at target dpi: 1pt = 1/72 in.
     const fontPx = (fontPt / 72) * dpi;
     const lineH = fontPx * spacing;
     const weight = state.bold ? '700' : '400';
+    const family = state.font === 'mono'
+      ? `"SF Mono", "JetBrains Mono", "Consolas", "Courier New", monospace`
+      : `"Helvetica Neue", Arial, sans-serif`;
     ctx.fillStyle = '#111111';
-    ctx.font = `${weight} ${fontPx}px "Helvetica Neue", Arial, sans-serif`;
+    ctx.font = `${weight} ${fontPx}px ${family}`;
     ctx.textBaseline = 'middle';
-
     const padX = 0.06 * dpi; // ~0.06in inner margin
-    const blockH = lineH * lines.length;
-    let y = hPx / 2 - blockH / 2 + lineH / 2;
 
-    for (const line of lines) {
-      let x, align;
-      if (state.align === 'left') { align = 'left'; x = padX; }
-      else { align = 'center'; x = wPx / 2; }
-      ctx.textAlign = align;
-      ctx.fillText(line, x, y);
-      y += lineH;
+    // Draw the text block centered within a rectangle (x0,y0,w,h).
+    function drawBlock(x0, y0, w, h) {
+      const blockH = lineH * lines.length;
+      let y = y0 + h / 2 - blockH / 2 + lineH / 2;
+      for (const line of lines) {
+        let x;
+        if (state.align === 'left') { ctx.textAlign = 'left'; x = x0 + padX; }
+        else { ctx.textAlign = 'center'; x = x0 + w / 2; }
+        ctx.fillText(line, x, y);
+        y += lineH;
+      }
     }
+
+    if (state.flag) {
+      // Self-laminating wraparound flag: the same text prints on both halves so
+      // it reads identically on each face of the folded flag. Split across the
+      // SHORTER axis so each copy keeps the full long edge for the text, and the
+      // fold runs down the middle (matching the physical flag stock).
+      if (wPx >= hPx) {
+        // Wider than tall: stack the copies top / bottom.
+        drawBlock(0, 0, wPx, hPx / 2);
+        drawBlock(0, hPx / 2, wPx, hPx / 2);
+        if (!isPrint) drawFold(ctx, 0, hPx / 2, wPx, hPx / 2, 'h');
+      } else {
+        // Taller than wide: place the copies side by side.
+        drawBlock(0, 0, wPx / 2, hPx);
+        drawBlock(wPx / 2, 0, wPx / 2, hPx);
+        if (!isPrint) drawFold(ctx, wPx / 2, 0, wPx / 2, hPx, 'v');
+      }
+    } else {
+      drawBlock(0, 0, wPx, hPx);
+    }
+  }
+
+  // Dashed fold line marking where the flag doubles over (screen preview only).
+  function drawFold(ctx, x, y, w, h, dir) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    if (dir === 'v') { ctx.moveTo(x, y); ctx.lineTo(x, y + h); }
+    else { ctx.moveTo(x, y); ctx.lineTo(x + w, y); }
+    ctx.stroke();
+    ctx.restore();
   }
 
   function renderPreview() {
@@ -845,6 +897,11 @@
       node.addEventListener(evt, renderPreview));
   });
 
+  el.fontFamily.addEventListener('change', () => {
+    state.font = el.fontFamily.value;
+    renderPreview();
+  });
+
   el.alignSeg.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       el.alignSeg.querySelectorAll('button').forEach(b => b.classList.remove('on'));
@@ -863,6 +920,7 @@
   }
   bindToggle(el.boldToggle, 'bold');
   bindToggle(el.rotateToggle, 'rotate');
+  bindToggle(el.flagToggle, 'flag');
 
   // ---- Actions ----
   el.btnConnect.addEventListener('click', async () => {

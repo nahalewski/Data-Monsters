@@ -405,6 +405,19 @@
     .col-controls { border-right: none; border-bottom: 1px solid var(--line); }
     .drawing { padding: 56px 46px; }
   }
+
+  /* Touch devices: 16px inputs stop iOS/Android auto-zoom on focus; roomier tap targets. */
+  @media (pointer: coarse), (max-width: 620px) {
+    input[type="text"], input[type="number"], textarea, select { font-size: 16px; }
+    button.btn { padding: 13px 12px; }
+    .seg button { padding: 11px 6px; }
+    .toggle { padding: 11px 12px; }
+    header.topbar { padding: 12px 16px; }
+    .col-controls { padding: 16px; }
+    .col-stage { padding: 18px; }
+    .banner { margin: 14px 16px 0; }
+    .drawing { padding: 48px 34px; }
+  }
 </style>
 </head>
 <body>
@@ -622,9 +635,34 @@
     el.envBanner.classList.add('show');
   }
 
+  // Platform detection. iOS is special: Apple forces every browser (incl.
+  // Chrome/CriOS, Edge/EdgiOS, Firefox/FxiOS) onto WebKit, which has no Web
+  // Bluetooth. So navigator.bluetooth is undefined there — the ONLY iOS path
+  // is a WebKit browser that bridges BLE itself (e.g. Bluefy / WebBLE).
+  function detectPlatform() {
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      // iPadOS 13+ reports as Mac; disambiguate via touch points.
+      (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+    const isAndroid = /Android/.test(ua);
+    const hasBLE = !!navigator.bluetooth;
+    const isChromeIOS = isIOS && /CriOS/.test(ua);
+    return { ua, isIOS, isAndroid, hasBLE, isChromeIOS };
+  }
+  const platform = detectPlatform();
+
+  // Web Bluetooth requires a secure origin everywhere.
   if (!window.isSecureContext) {
     sdkOk = false;
-    warnEnv(`<b>⚠ Insecure context.</b> Web Bluetooth requires a secure origin. Serve this file over <b>HTTPS</b> or open it at <code>http://localhost</code>. (e.g. <code>python3 -m http.server</code> then browse to <code>http://localhost:8000</code>.)`);
+    warnEnv(`<b>⚠ Insecure context.</b> Web Bluetooth requires a secure origin. Open this over <b>HTTPS</b> (e.g. your Render URL) or at <code>http://localhost</code>. On the hosted HTTPS URL this warning won't appear.`);
+  }
+  // iOS gate: surface the accurate reason immediately, before the SDK loads,
+  // so Chrome-iOS users aren't told "SDK failed" or a vague "unsupported".
+  else if (platform.isIOS && !platform.hasBLE) {
+    sdkOk = false;
+    const which = platform.isChromeIOS ? 'Chrome on iOS' : 'this iOS browser';
+    warnEnv(`<b>⚠ ${which} can't use Web Bluetooth.</b> On iPhone/iPad, Apple requires every browser — including Chrome, Edge and Firefox — to run on WebKit, which has no Bluetooth support, so no Safari-based browser can reach the printer. <b>The designer below still works</b>, so you can compose labels here. To actually print from iOS, open this page in a Web-Bluetooth browser such as <b>Bluefy</b> (App Store), or print from <b>Chrome on Android</b> or desktop Chrome/Edge.`);
+    log('iOS WebKit browser detected — Web Bluetooth unavailable. Designer still usable.', 'warn');
   }
 
   // ---- SDK init ----
@@ -661,10 +699,14 @@
 
       if (!supported) {
         sdkOk = false;
-        warnEnv(`<b>⚠ Unsupported browser.</b> Web Bluetooth is only available in Chromium browsers — <b>Chrome, Edge, or Opera</b> on desktop, or <b>Chrome / Samsung Internet</b> on Android. This browser can't talk to the printer.`);
+        const iosHint = platform.isIOS
+          ? ` On iOS, use a Web-Bluetooth browser like <b>Bluefy</b> instead.`
+          : ` Use <b>Chrome, Edge, or Opera</b> on desktop, or <b>Chrome / Samsung Internet</b> on Android.`;
+        warnEnv(`<b>⚠ Unsupported browser.</b> This browser can't talk to the printer over Web Bluetooth.${iosHint} The designer above still works for composing labels.`);
         log('Browser does not support Web Bluetooth.', 'warn');
       } else {
-        log('Chromium Web Bluetooth detected — ready to connect.', 'ok');
+        const where = platform.isAndroid ? 'Chrome on Android' : 'this browser';
+        log(`Web Bluetooth available in ${where} — ready to connect.`, 'ok');
       }
       updateButtons();
     } catch (e) {

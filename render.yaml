@@ -4,3 +4,18 @@ services:
     runtime: static
     buildCommand: git clone https://github.com/flutter/flutter.git --depth 1 -b stable _flutter && _flutter/bin/flutter build web --release
     staticPublishPath: build/web
+
+  - type: web
+    name: brady-m511-labeler
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: label-app
+    pullRequestPreviewsEnabled: true
+    headers:
+      - path: /*
+        name: Permissions-Policy
+        value: bluetooth=(self)
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -833,7 +833,15 @@
     const padX = 0.06 * dpi; // ~0.06in inner margin
 
     // Draw the text block centered within a rectangle (x0,y0,w,h).
-    function drawBlock(x0, y0, w, h) {
+    // rot180 pre-rotates the copy 180° about the rect centre.
+    function drawBlock(x0, y0, w, h, rot180) {
+      ctx.save();
+      if (rot180) {
+        const cx = x0 + w / 2, cy = y0 + h / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate(Math.PI);
+        ctx.translate(-cx, -cy);
+      }
       const blockH = lineH * lines.length;
       let y = y0 + h / 2 - blockH / 2 + lineH / 2;
       for (const line of lines) {
@@ -843,26 +851,30 @@
         ctx.fillText(line, x, y);
         y += lineH;
       }
+      ctx.restore();
     }
 
     if (state.flag) {
       // Self-laminating wraparound flag: the same text prints on both halves so
-      // it reads identically on each face of the folded flag. Split across the
-      // SHORTER axis so each copy keeps the full long edge for the text, and the
-      // fold runs down the middle (matching the physical flag stock).
+      // it reads identically on each face once the label is folded down the
+      // middle. Split across the SHORTER axis so each copy keeps the full long
+      // edge for the text. For a horizontal fold the two faces end up
+      // back-to-back and a fold about a horizontal axis inverts the text, so the
+      // far (top) copy is pre-rotated 180° — after folding, both read upright.
       if (wPx >= hPx) {
-        // Wider than tall: stack the copies top / bottom.
-        drawBlock(0, 0, wPx, hPx / 2);
-        drawBlock(0, hPx / 2, wPx, hPx / 2);
+        // Wider than tall: stack the copies top / bottom (horizontal fold).
+        drawBlock(0, hPx / 2, wPx, hPx / 2, false); // bottom: upright reference
+        drawBlock(0, 0, wPx, hPx / 2, true);        // top: rotated 180°
         if (!isPrint) drawFold(ctx, 0, hPx / 2, wPx, hPx / 2, 'h');
       } else {
-        // Taller than wide: place the copies side by side.
-        drawBlock(0, 0, wPx / 2, hPx);
-        drawBlock(wPx / 2, 0, wPx / 2, hPx);
+        // Taller than wide: copies side by side (vertical fold). A 180° fold
+        // about a vertical axis keeps text readable, so both stay upright.
+        drawBlock(0, 0, wPx / 2, hPx, false);
+        drawBlock(wPx / 2, 0, wPx / 2, hPx, false);
         if (!isPrint) drawFold(ctx, wPx / 2, 0, wPx / 2, hPx, 'v');
       }
     } else {
-      drawBlock(0, 0, wPx, hPx);
+      drawBlock(0, 0, wPx, hPx, false);
     }
   }
 

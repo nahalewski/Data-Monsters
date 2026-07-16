@@ -1,11 +1,5 @@
 services:
   - type: web
-    name: jp-junk-removal
-    runtime: static
-    buildCommand: git clone https://github.com/flutter/flutter.git --depth 1 -b stable _flutter && _flutter/bin/flutter build web --release
-    staticPublishPath: build/web
-
-  - type: web
     name: brady-m511-labeler
     runtime: static
     buildCommand: ""

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Ombi Requests</title>
+    <style>
+        .ombiSearchBar { display: flex; gap: 0.5em; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1em; }
+        .ombiResults { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1em; }
+        .ombiCard { display: flex; flex-direction: column; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,0.06); }
+        .ombiCard img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; background: rgba(0,0,0,0.3); }
+        .ombiCardBody { padding: 0.6em; display: flex; flex-direction: column; gap: 0.35em; flex: 1; }
+        .ombiCardTitle { font-weight: 600; line-height: 1.2; }
+        .ombiCardMeta { font-size: 0.85em; opacity: 0.7; }
+        .ombiBadge { display: inline-block; font-size: 0.75em; padding: 0.1em 0.5em; border-radius: 10px; }
+        .ombiBadge.available { background: #4caf50; color: #fff; }
+        .ombiBadge.requested { background: #ff9800; color: #fff; }
+        .ombiCard button { margin-top: auto; }
+        .ombiEmpty { opacity: 0.7; padding: 1em 0; }
+    </style>
+</head>
+<body>
+<div id="OmbiRequestPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-controller="__plugin/OmbiRequests.js">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="verticalSection">
+                <h2 class="sectionTitle">Request movies &amp; TV shows</h2>
+                <p class="fieldDescription">Search for a title and send a request to Ombi.</p>
+            </div>
+
+            <form id="OmbiSearchForm" class="ombiSearchBar">
+                <div class="inputContainer" style="flex:1; min-width:200px; margin-bottom:0;">
+                    <input is="emby-input" type="text" id="OmbiQuery" placeholder="Search for a movie or show…" autocomplete="off" />
+                </div>
+                <div class="selectContainer" style="margin-bottom:0;">
+                    <select is="emby-select" id="OmbiType" label="Type">
+                        <option value="all">All</option>
+                        <option value="movie">Movies</option>
+                        <option value="tv">TV shows</option>
+                    </select>
+                </div>
+                <button is="emby-button" type="submit" class="raised button-submit">
+                    <span>Search</span>
+                </button>
+            </form>
+
+            <div id="OmbiStatus" class="fieldDescription" style="min-height:1.5em;"></div>
+            <div id="OmbiResults" class="ombiResults"></div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var page = document.querySelector("#OmbiRequestPage");
+            var resultsEl = page.querySelector("#OmbiResults");
+            var statusEl = page.querySelector("#OmbiStatus");
+
+            function setStatus(text, isError) {
+                statusEl.textContent = text || "";
+                statusEl.style.color = isError ? "#f44336" : "";
+            }
+
+            function escapeHtml(str) {
+                return (str || "").replace(/[&<>"']/g, function (c) {
+                    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+                });
+            }
+
+            function yearOf(dateStr) {
+                if (!dateStr) { return ""; }
+                var m = /\d{4}/.exec(dateStr);
+                return m ? m[0] : "";
+            }
+
+            function renderResults(items) {
+                resultsEl.innerHTML = "";
+                if (!items || !items.length) {
+                    resultsEl.innerHTML = '<div class="ombiEmpty">No results found.</div>';
+                    return;
+                }
+
+                items.forEach(function (item) {
+                    var card = document.createElement("div");
+                    card.className = "ombiCard";
+
+                    var poster = item.PosterPath || item.posterPath;
+                    var title = item.Title || item.title;
+                    var overview = item.Overview || item.overview;
+                    var mediaType = item.MediaType || item.mediaType;
+                    var available = item.Available || item.available;
+                    var requested = item.Requested || item.requested;
+                    var year = yearOf(item.ReleaseDate || item.releaseDate);
+
+                    var badge = "";
+                    if (available) {
+                        badge = '<span class="ombiBadge available">Available</span>';
+                    } else if (requested) {
+                        badge = '<span class="ombiBadge requested">Requested</span>';
+                    }
+
+                    var buttonHtml = "";
+                    if (!available && !requested) {
+                        buttonHtml = '<button is="emby-button" type="button" class="raised block ombiRequestBtn">' +
+                            '<span>Request</span></button>';
+                    }
+
+                    var img = poster
+                        ? '<img loading="lazy" src="' + escapeHtml(poster) + '" alt="" />'
+                        : '<img alt="" />';
+
+                    card.innerHTML =
+                        img +
+                        '<div class="ombiCardBody">' +
+                        '<div class="ombiCardTitle">' + escapeHtml(title) + '</div>' +
+                        '<div class="ombiCardMeta">' + escapeHtml((mediaType === "tv" ? "TV" : "Movie") + (year ? " · " + year : "")) + '</div>' +
+                        badge +
+                        buttonHtml +
+                        '</div>';
+
+                    var btn = card.querySelector(".ombiRequestBtn");
+                    if (btn) {
+                        btn.addEventListener("click", function () {
+                            submitRequest(item, btn);
+                        });
+                    }
+
+                    resultsEl.appendChild(card);
+                });
+            }
+
+            function submitRequest(item, btn) {
+                var mediaType = item.MediaType || item.mediaType;
+                btn.disabled = true;
+                btn.querySelector("span").textContent = "Requesting…";
+
+                var url;
+                var body;
+                if (mediaType === "movie") {
+                    url = ApiClient.getUrl("Ombi/Request/Movie");
+                    body = { TheMovieDbId: item.TheMovieDbId || item.theMovieDbId };
+                } else {
+                    url = ApiClient.getUrl("Ombi/Request/Tv");
+                    body = { TvDbId: item.TheTvDbId || item.theTvDbId };
+                }
+
+                ApiClient.ajax({
+                    type: "POST",
+                    url: url,
+                    data: JSON.stringify(body),
+                    contentType: "application/json",
+                    dataType: "json"
+                }).then(function (res) {
+                    if (res.Success) {
+                        btn.querySelector("span").textContent = "Requested";
+                        setStatus(res.Message || "Request submitted.", false);
+                    } else {
+                        btn.disabled = false;
+                        btn.querySelector("span").textContent = "Request";
+                        setStatus(res.Message || "Request failed.", true);
+                    }
+                }, function () {
+                    btn.disabled = false;
+                    btn.querySelector("span").textContent = "Request";
+                    setStatus("Request failed.", true);
+                });
+            }
+
+            function search() {
+                var query = page.querySelector("#OmbiQuery").value.trim();
+                var type = page.querySelector("#OmbiType").value;
+                if (!query) {
+                    setStatus("Enter a search term.", true);
+                    return;
+                }
+
+                setStatus("Searching…", false);
+                resultsEl.innerHTML = "";
+                var url = ApiClient.getUrl("Ombi/Search", { query: query, type: type });
+                ApiClient.ajax({ type: "GET", url: url, dataType: "json" }).then(function (items) {
+                    setStatus(items && items.length ? "" : "No results found.", false);
+                    renderResults(items);
+                }, function () {
+                    setStatus("Search failed. Check the Ombi configuration.", true);
+                });
+            }
+
+            page.querySelector("#OmbiSearchForm").addEventListener("submit", function (e) {
+                e.preventDefault();
+                search();
+                return false;
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

@@ -1,0 +1,20 @@
+---
+name: "Ombi Requests"
+guid: "7b222f6f-30f2-4709-9170-3c46087c81c3"
+version: "1.0.0.0"
+targetAbi: "10.10.0.0"
+framework: "net8.0"
+owner: "nahalewski"
+overview: "Search and request movies and TV shows through Ombi, from within Jellyfin."
+description: >
+  Connects Jellyfin to an Ombi server. Adds an admin configuration page for the
+  Ombi URL and API key, and a user-facing page to search for movies and TV shows
+  and submit requests to Ombi. Requests can be attributed to the current Jellyfin
+  user so they show up under the matching Ombi account.
+category: "General"
+artifacts:
+  - "Jellyfin.Plugin.Ombi.dll"
+changelog: >
+  1.0.0.0
+  - Initial release: Ombi connection settings, connection test, movie & TV search,
+    and movie & TV requests.

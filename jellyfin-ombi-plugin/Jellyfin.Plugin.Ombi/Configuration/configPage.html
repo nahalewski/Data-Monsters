@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Ombi Requests</title>
+</head>
+<body>
+<div id="OmbiConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-controller="__plugin/OmbiConfig.js">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="OmbiConfigForm">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Ombi Requests</h2>
+                    <p class="fieldDescription">
+                        Connect Jellyfin to your Ombi server so users can search for and request
+                        movies and TV shows. Users open the request page from
+                        <strong>Dashboard &rarr; My Plugins &rarr; Ombi Requests</strong> or via the
+                        direct URL shown below.
+                    </p>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="OmbiUrl">Ombi server URL</label>
+                    <input is="emby-input" type="url" id="OmbiUrl" name="OmbiUrl"
+                           placeholder="http://localhost:5000" />
+                    <div class="fieldDescription">
+                        The full base URL of your Ombi server, including scheme and port.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="ApiKey">Ombi API key</label>
+                    <input is="emby-input" type="text" id="ApiKey" name="ApiKey" autocomplete="off" />
+                    <div class="fieldDescription">
+                        Found in Ombi under <em>Settings &rarr; Configuration &rarr; General</em>.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="RequestOnBehalfOfCurrentUser" />
+                        <span>Attribute requests to the current Jellyfin user</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        When enabled, requests are submitted using the Jellyfin username so they
+                        appear under the matching Ombi account. Requires the usernames to match in Ombi.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="DefaultRequestAllSeasons" />
+                        <span>Request all seasons by default for TV shows</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        When enabled, requesting a show asks Ombi for every season unless the user
+                        chooses otherwise.
+                    </div>
+                </div>
+
+                <br />
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Save</span>
+                    </button>
+                    <button is="emby-button" type="button" id="OmbiTestButton" class="raised block">
+                        <span>Test connection</span>
+                    </button>
+                </div>
+
+                <br />
+                <div id="OmbiTestResult" class="fieldDescription" style="min-height:1.5em;"></div>
+                <div class="fieldDescription">
+                    User request page:
+                    <a is="emby-linkbutton" class="button-link"
+                       href="#!/configurationpage?name=OmbiRequests">Open Ombi Requests</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = "7b222f6f-30f2-4709-9170-3c46087c81c3";
+
+            function loadConfig(page) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    page.querySelector("#OmbiUrl").value = config.OmbiUrl || "";
+                    page.querySelector("#ApiKey").value = config.ApiKey || "";
+                    page.querySelector("#RequestOnBehalfOfCurrentUser").checked = config.RequestOnBehalfOfCurrentUser !== false;
+                    page.querySelector("#DefaultRequestAllSeasons").checked = config.DefaultRequestAllSeasons !== false;
+                    Dashboard.hideLoadingMsg();
+                });
+            }
+
+            function saveConfig(page) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.OmbiUrl = page.querySelector("#OmbiUrl").value.trim();
+                    config.ApiKey = page.querySelector("#ApiKey").value.trim();
+                    config.RequestOnBehalfOfCurrentUser = page.querySelector("#RequestOnBehalfOfCurrentUser").checked;
+                    config.DefaultRequestAllSeasons = page.querySelector("#DefaultRequestAllSeasons").checked;
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+            }
+
+            function testConnection(page) {
+                var resultEl = page.querySelector("#OmbiTestResult");
+                resultEl.textContent = "Testing…";
+                resultEl.style.color = "";
+                saveConfig(page);
+                var url = ApiClient.getUrl("Ombi/TestConnection");
+                ApiClient.ajax({ type: "GET", url: url, dataType: "json" }).then(function (res) {
+                    resultEl.textContent = res.Message || (res.Success ? "Connected." : "Failed.");
+                    resultEl.style.color = res.Success ? "#4caf50" : "#f44336";
+                }, function () {
+                    resultEl.textContent = "Connection test failed.";
+                    resultEl.style.color = "#f44336";
+                });
+            }
+
+            var page = document.querySelector("#OmbiConfigPage");
+
+            page.addEventListener("viewshow", function () {
+                loadConfig(page);
+            });
+
+            page.querySelector("#OmbiConfigForm").addEventListener("submit", function (e) {
+                e.preventDefault();
+                saveConfig(page);
+                return false;
+            });
+
+            page.querySelector("#OmbiTestButton").addEventListener("click", function () {
+                testConnection(page);
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

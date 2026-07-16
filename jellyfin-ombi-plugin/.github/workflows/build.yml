@@ -1,0 +1,36 @@
+name: Build Jellyfin Ombi Plugin
+
+on:
+  push:
+    paths:
+      - "jellyfin-ombi-plugin/**"
+  pull_request:
+    paths:
+      - "jellyfin-ombi-plugin/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: jellyfin-ombi-plugin/Jellyfin.Plugin.Ombi
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jellyfin.Plugin.Ombi
+          path: jellyfin-ombi-plugin/Jellyfin.Plugin.Ombi/bin/Release/net8.0/Jellyfin.Plugin.Ombi.dll

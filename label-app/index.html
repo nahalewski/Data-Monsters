@@ -270,6 +270,35 @@
   button.btn.ghost-danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
   button.btn:disabled { opacity: .4; cursor: not-allowed; }
 
+  /* Import list */
+  .import-info {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+    line-height: 1.5;
+  }
+  .import-info.loaded { color: var(--accent); }
+  .import-info.err { color: var(--danger); }
+  .record-nav { margin-top: 12px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+  .nav-line { display: flex; gap: 8px; align-items: stretch; }
+  .nav-line select { flex: 1; }
+  .navbtn {
+    flex: none; width: 40px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 2px;
+    color: var(--ink); font-family: var(--mono); font-size: 18px; line-height: 1;
+    cursor: pointer; transition: border-color .12s, color .12s;
+  }
+  .navbtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .navbtn:disabled { opacity: .35; cursor: not-allowed; }
+  .nav-meta {
+    display: flex; justify-content: space-between; align-items: center; margin-top: 9px;
+  }
+  .mono-accent { font-family: var(--mono); font-size: 11.5px; color: var(--accent); letter-spacing: .5px; }
+  .linkbtn {
+    background: none; border: none; color: var(--ink-faint);
+    font-family: var(--mono); font-size: 11px; cursor: pointer; text-decoration: underline;
+    padding: 0;
+  }
+  .linkbtn:hover { color: var(--danger); }
+
   .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .btn-grid .span2 { grid-column: 1 / -1; }
 
@@ -461,6 +490,31 @@
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>Import List</h2><span class="idx">CSV/XLSX</span></div>
+      <div class="panel-body">
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,text/csv" hidden />
+        <button id="btnImport" class="btn" style="margin-bottom:10px;">⤒ Import CSV / Excel…</button>
+        <div class="toggle on" id="headerToggle" style="margin-bottom:10px;">
+          <span class="lbl2">First row is a header</span><span class="switch"></span>
+        </div>
+        <div id="importInfo" class="import-info">No list loaded — each row becomes one label.</div>
+        <a href="sample-labels.csv" download class="linkbtn" style="display:inline-block; margin-top:8px;">↓ download sample CSV</a>
+
+        <div id="recordNav" class="record-nav" style="display:none;">
+          <div class="nav-line">
+            <button id="btnPrev" class="navbtn">‹</button>
+            <select id="recordSelect"></select>
+            <button id="btnNext" class="navbtn">›</button>
+          </div>
+          <div class="nav-meta">
+            <span id="recordCount" class="mono-accent">0 / 0</span>
+            <button id="btnClearList" class="linkbtn">clear list</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Label Content</h2><span class="idx">TXT</span></div>
       <div class="panel-body">
         <label class="field">
@@ -535,6 +589,7 @@
           </label>
         </div>
         <button id="btnPrint" class="btn primary" disabled style="margin-bottom:10px;">▶ Print Label</button>
+        <button id="btnPrintAll" class="btn" disabled style="margin-bottom:10px; display:none;">▶▶ Print All Labels</button>
         <div class="btn-grid">
           <button id="btnFeed" class="btn" disabled>Feed</button>
           <button id="btnCut" class="btn" disabled>Cut</button>
@@ -611,6 +666,10 @@
     copies: $('copies'), cutOption: $('cutOption'),
     alignSeg: $('alignSeg'), boldToggle: $('boldToggle'), rotateToggle: $('rotateToggle'),
     flagToggle: $('flagToggle'), fontFamily: $('fontFamily'),
+    fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
+    importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
+    recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
+    btnClearList: $('btnClearList'), btnPrintAll: $('btnPrintAll'),
     preview: $('preview'), printCanvas: $('printCanvas'),
     labelFrame: $('labelFrame'), dimW: $('dimW'), dimH: $('dimH'),
     metaScreenPx: $('metaScreenPx'), metaPrintDpi: $('metaPrintDpi'), dpiTag: $('dpiTag'),
@@ -626,6 +685,10 @@
     font: 'mono',
     connected: false,
   };
+
+  // Imported label list. Each record is an array of cell strings (one row).
+  let records = [];
+  let recordIndex = 0;
 
   // ---- Logging ----
   function log(msg, kind = '') {
@@ -753,6 +816,7 @@
     el.btnPrint.disabled = !state.connected;
     el.btnFeed.disabled = !state.connected;
     el.btnCut.disabled = !state.connected;
+    el.btnPrintAll.disabled = !state.connected || records.length === 0;
   }
 
   // ---- Telemetry ----
@@ -833,7 +897,15 @@
     const padX = 0.06 * dpi; // ~0.06in inner margin
 
     // Draw the text block centered within a rectangle (x0,y0,w,h).
-    function drawBlock(x0, y0, w, h) {
+    // rot180 pre-rotates the copy 180° about the rect centre.
+    function drawBlock(x0, y0, w, h, rot180) {
+      ctx.save();
+      if (rot180) {
+        const cx = x0 + w / 2, cy = y0 + h / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate(Math.PI);
+        ctx.translate(-cx, -cy);
+      }
       const blockH = lineH * lines.length;
       let y = y0 + h / 2 - blockH / 2 + lineH / 2;
       for (const line of lines) {
@@ -843,26 +915,30 @@
         ctx.fillText(line, x, y);
         y += lineH;
       }
+      ctx.restore();
     }
 
     if (state.flag) {
       // Self-laminating wraparound flag: the same text prints on both halves so
-      // it reads identically on each face of the folded flag. Split across the
-      // SHORTER axis so each copy keeps the full long edge for the text, and the
-      // fold runs down the middle (matching the physical flag stock).
+      // it reads identically on each face once the label is folded down the
+      // middle. Split across the SHORTER axis so each copy keeps the full long
+      // edge for the text. For a horizontal fold the two faces end up
+      // back-to-back and a fold about a horizontal axis inverts the text, so the
+      // far (top) copy is pre-rotated 180° — after folding, both read upright.
       if (wPx >= hPx) {
-        // Wider than tall: stack the copies top / bottom.
-        drawBlock(0, 0, wPx, hPx / 2);
-        drawBlock(0, hPx / 2, wPx, hPx / 2);
+        // Wider than tall: stack the copies top / bottom (horizontal fold).
+        drawBlock(0, hPx / 2, wPx, hPx / 2, false); // bottom: upright reference
+        drawBlock(0, 0, wPx, hPx / 2, true);        // top: rotated 180°
         if (!isPrint) drawFold(ctx, 0, hPx / 2, wPx, hPx / 2, 'h');
       } else {
-        // Taller than wide: place the copies side by side.
-        drawBlock(0, 0, wPx / 2, hPx);
-        drawBlock(wPx / 2, 0, wPx / 2, hPx);
+        // Taller than wide: copies side by side (vertical fold). A 180° fold
+        // about a vertical axis keeps text readable, so both stay upright.
+        drawBlock(0, 0, wPx / 2, hPx, false);
+        drawBlock(wPx / 2, 0, wPx / 2, hPx, false);
         if (!isPrint) drawFold(ctx, wPx / 2, 0, wPx / 2, hPx, 'v');
       }
     } else {
-      drawBlock(0, 0, wPx, hPx);
+      drawBlock(0, 0, wPx, hPx, false);
     }
   }
 
@@ -921,6 +997,142 @@
   bindToggle(el.boldToggle, 'bold');
   bindToggle(el.rotateToggle, 'rotate');
   bindToggle(el.flagToggle, 'flag');
+  // Header toggle: re-parse the loaded rows when flipped.
+  el.headerToggle.addEventListener('click', () => {
+    el.headerToggle.classList.toggle('on');
+    if (rawRows.length) loadRows(rawRows);
+  });
+
+  // ---- Import: CSV / Excel ----
+  let rawRows = []; // last parsed array-of-arrays, kept so header toggle can re-slice.
+
+  // Minimal RFC-4180-ish CSV parser (quotes, escaped quotes, embedded newlines).
+  function parseCSV(text) {
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const rows = []; let row = [], field = '', inQ = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; }
+          else inQ = false;
+        } else field += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else field += c;
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  // Excel via SheetJS, loaded lazily only when an .xlsx/.xls is chosen.
+  async function parseExcel(arrayBuffer) {
+    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
+  }
+
+  function recordToText(rec) {
+    return rec.map(c => (c == null ? '' : String(c)).trim())
+              .filter(c => c !== '')
+              .join('\n');
+  }
+
+  // Turn parsed rows into the record list, honouring the header toggle.
+  function loadRows(rows) {
+    rawRows = rows;
+    // Drop fully-empty rows.
+    const clean = rows.filter(r => r.some(c => (c != null && String(c).trim() !== '')));
+    if (!clean.length) {
+      records = [];
+      setImportInfo('File had no usable rows.', 'err');
+      updateRecordNav();
+      return;
+    }
+    const headerMode = el.headerToggle.classList.contains('on');
+    const data = headerMode ? clean.slice(1) : clean;
+    records = data.map(r => r.map(c => (c == null ? '' : String(c))));
+    recordIndex = 0;
+    const hdr = headerMode && clean[0] ? clean[0].map(c => String(c).trim()).filter(Boolean).join(' · ') : '';
+    setImportInfo(`${records.length} label${records.length === 1 ? '' : 's'} loaded` +
+      (hdr ? ` · columns: ${hdr}` : ''), 'loaded');
+    updateRecordNav();
+    if (records.length) showRecord(0);
+  }
+
+  function setImportInfo(msg, cls) {
+    el.importInfo.textContent = msg;
+    el.importInfo.className = 'import-info' + (cls ? ' ' + cls : '');
+  }
+
+  function updateRecordNav() {
+    const has = records.length > 0;
+    el.recordNav.style.display = has ? '' : 'none';
+    el.btnPrintAll.style.display = has ? '' : 'none';
+    el.btnPrintAll.disabled = !has || !state.connected;
+    if (!has) return;
+    // Rebuild the dropdown (first non-empty cell as a short label).
+    el.recordSelect.innerHTML = '';
+    records.forEach((rec, i) => {
+      const opt = document.createElement('option');
+      const preview = (rec.find(c => String(c).trim() !== '') || '(blank)').toString().trim();
+      opt.value = String(i);
+      opt.textContent = `${i + 1}. ${preview.slice(0, 40)}`;
+      el.recordSelect.appendChild(opt);
+    });
+    el.recordSelect.value = String(recordIndex);
+    el.recordCount.textContent = `${recordIndex + 1} / ${records.length}`;
+    el.btnPrev.disabled = recordIndex <= 0;
+    el.btnNext.disabled = recordIndex >= records.length - 1;
+  }
+
+  function showRecord(i) {
+    if (i < 0 || i >= records.length) return;
+    recordIndex = i;
+    el.text.value = recordToText(records[i]);
+    el.recordSelect.value = String(i);
+    el.recordCount.textContent = `${i + 1} / ${records.length}`;
+    el.btnPrev.disabled = i <= 0;
+    el.btnNext.disabled = i >= records.length - 1;
+    renderPreview();
+  }
+
+  async function handleFile(file) {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    setImportInfo(`Reading ${file.name}…`, '');
+    try {
+      let rows;
+      if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        rows = await parseExcel(await file.arrayBuffer());
+      } else {
+        rows = parseCSV(await file.text());
+      }
+      loadRows(rows);
+      log(`Imported ${records.length} row(s) from ${file.name}.`, 'ok');
+    } catch (e) {
+      setImportInfo(`Could not read ${file.name}: ${e.message}`, 'err');
+      log('Import failed: ' + (e.message || e), 'err');
+    }
+  }
+
+  el.btnImport.addEventListener('click', () => el.fileInput.click());
+  el.fileInput.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    handleFile(f);
+    e.target.value = ''; // allow re-importing the same file
+  });
+  el.recordSelect.addEventListener('change', () => showRecord(parseInt(el.recordSelect.value, 10)));
+  el.btnPrev.addEventListener('click', () => showRecord(recordIndex - 1));
+  el.btnNext.addEventListener('click', () => showRecord(recordIndex + 1));
+  el.btnClearList.addEventListener('click', () => {
+    records = []; rawRows = []; recordIndex = 0;
+    setImportInfo('No list loaded — each row becomes one label.', '');
+    updateRecordNav();
+    log('Cleared imported list.', 'warn');
+  });
 
   // ---- Actions ----
   el.btnConnect.addEventListener('click', async () => {
@@ -973,14 +1185,7 @@
       renderLabel(el.printCanvas, dpi);
       log(`Rasterizing ${el.printCanvas.width}×${el.printCanvas.height}px @ ${dpi}dpi · ${copies} copy(ies) · cut=${cut}`);
 
-      const dataUrl = el.printCanvas.toDataURL('image/png');
-      const img = new Image();
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = () => reject(new Error('bitmap load failed'));
-        img.src = dataUrl;
-      });
-
+      const img = await canvasToImage(el.printCanvas);
       const ok = await bradySdk.printBitmap(img, 0, 0); // xOffset,yOffset in inches
       if (ok === false) throw new Error('printBitmap reported failure');
       setStatus('Connected', 'ok');
@@ -991,6 +1196,52 @@
       setTimeout(() => { if (state.connected) setStatus('Connected', 'ok'); }, 1800);
     } finally {
       btn.disabled = !state.connected;
+    }
+  });
+
+  // Convert a canvas to a loaded <img> for printBitmap.
+  function canvasToImage(canvas) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('bitmap load failed'));
+      img.src = canvas.toDataURL('image/png');
+    });
+  }
+
+  // Batch-print every imported record in order.
+  el.btnPrintAll.addEventListener('click', async () => {
+    if (!bradySdk || !records.length) return;
+    const total = records.length;
+    if (!window.confirm(`Print all ${total} labels?`)) return;
+    el.btnPrint.disabled = true;
+    el.btnPrintAll.disabled = true;
+    const startIndex = recordIndex;
+    try {
+      const copies = Math.max(1, parseInt(el.copies.value, 10) || 1);
+      const cut = parseInt(el.cutOption.value, 10);
+      if (typeof bradySdk.setCopies === 'function') bradySdk.setCopies(copies);
+      if (typeof bradySdk.setCutOption === 'function') bradySdk.setCutOption(cut);
+      const dpi = Number(safeGet(() => bradySdk.dotsPerInch, null)) || PRINT_DPI_FALLBACK;
+
+      for (let i = 0; i < total; i++) {
+        showRecord(i); // updates text + on-screen preview so progress is visible
+        setStatus(`Printing ${i + 1}/${total}…`, 'busy');
+        renderLabel(el.printCanvas, dpi);
+        const img = await canvasToImage(el.printCanvas);
+        const ok = await bradySdk.printBitmap(img, 0, 0);
+        if (ok === false) throw new Error(`printBitmap failed on label ${i + 1}`);
+        log(`Printed ${i + 1}/${total}.`, 'ok');
+      }
+      setStatus('Connected', 'ok');
+      log(`Batch complete — ${total} label(s) sent.`, 'ok');
+    } catch (e) {
+      setStatus('Error', 'err');
+      log('Batch print failed: ' + (e.message || e), 'err');
+      setTimeout(() => { if (state.connected) setStatus('Connected', 'ok'); }, 1800);
+    } finally {
+      showRecord(startIndex);
+      updateButtons();
     }
   });
 

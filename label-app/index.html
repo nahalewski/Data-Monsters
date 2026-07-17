@@ -299,6 +299,50 @@
   }
   .linkbtn:hover { color: var(--danger); }
 
+  /* Bottom CSV data bar */
+  .databar { border-top: 2px solid var(--line); background: var(--panel); }
+  .tabbar {
+    display: flex; align-items: center; gap: 4px;
+    padding: 8px 16px 0; border-bottom: 1px solid var(--line-soft);
+    background: var(--panel-2);
+  }
+  .tabbar .tab {
+    background: none; border: 1px solid transparent; border-bottom: none;
+    color: var(--ink-dim); font-family: var(--mono); font-size: 12px;
+    letter-spacing: .5px; padding: 8px 14px; border-radius: 3px 3px 0 0;
+    cursor: pointer; transition: color .12s, background .12s;
+  }
+  .tabbar .tab:hover { color: var(--ink); }
+  .tabbar .tab.on {
+    color: var(--accent); border-color: var(--line-soft); border-bottom-color: var(--panel);
+    background: var(--panel); margin-bottom: -1px;
+  }
+  .databar-status { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-left: 12px; }
+  .tabbar-actions { margin-left: auto; display: flex; gap: 16px; }
+  .tabpane { display: none; }
+  .tabpane.on { display: block; }
+  .data-table-wrap { max-height: 320px; overflow: auto; }
+  .data-table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; }
+  .data-table td { border: 1px solid var(--line-soft); padding: 6px 10px; color: var(--ink); white-space: nowrap; }
+  .data-table td.cell { min-width: 80px; }
+  .data-table td.cell:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(0,229,160,.07); }
+  .data-table tr.hrow td { background: var(--panel-2); color: var(--accent); font-weight: 700; position: sticky; top: 0; z-index: 1; }
+  .data-table td.rownum {
+    color: var(--ink-faint); text-align: right; user-select: none;
+    background: var(--panel-2); position: sticky; left: 0; min-width: 30px;
+  }
+  .data-table tr.hrow td.rownum { z-index: 2; }
+  .data-table td.rowdel { color: var(--ink-faint); cursor: pointer; text-align: center; user-select: none; width: 28px; }
+  .data-table td.rowdel:hover { color: var(--danger); }
+  .data-empty { padding: 26px 18px; font-family: var(--mono); font-size: 12px; color: var(--ink-faint); line-height: 1.6; }
+  .data-empty b { color: var(--accent); }
+  .raw-csv {
+    width: 100%; min-height: 220px; max-height: 320px; box-sizing: border-box;
+    border: none; background: #080a0d; color: var(--ink);
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.6; padding: 14px 16px;
+    resize: vertical; outline: none; white-space: pre;
+  }
+
   .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .btn-grid .span2 { grid-column: 1 / -1; }
 
@@ -661,6 +705,30 @@
   </section>
 </main>
 
+<!-- ============ BOTTOM: LIVE CSV DATA ============ -->
+<section class="databar" id="databar">
+  <div class="tabbar">
+    <button class="tab on" data-tab="table">▦ CSV Table</button>
+    <button class="tab" data-tab="raw">⟨/⟩ Raw CSV</button>
+    <span class="databar-status" id="dataStatus">no data</span>
+    <div class="tabbar-actions">
+      <button id="btnAddRow" class="linkbtn">+ row</button>
+      <button id="btnExportCsv" class="linkbtn">↓ export</button>
+    </div>
+  </div>
+  <div class="tabpanes">
+    <div class="tabpane on" id="pane-table">
+      <div class="data-table-wrap" id="dataTableWrap">
+        <div class="data-empty" id="dataEmpty">No CSV loaded. Import a file in the panel above, or switch to <b>Raw CSV</b> and type. Edits here update the label preview live.</div>
+        <table class="data-table" id="dataTable" style="display:none;"></table>
+      </div>
+    </div>
+    <div class="tabpane" id="pane-raw">
+      <textarea id="rawCsv" class="raw-csv" spellcheck="false" placeholder="Paste or type CSV here — the table and label preview update as you type…"></textarea>
+    </div>
+  </div>
+</section>
+
 <!-- offscreen canvas for high-DPI print raster -->
 <canvas id="printCanvas" style="display:none;"></canvas>
 
@@ -695,6 +763,8 @@
     flagToggle: $('flagToggle'), fontFamily: $('fontFamily'), autoFitToggle: $('autoFitToggle'),
     labelW: $('labelW'), labelH: $('labelH'), sizePreset: $('sizePreset'), metaStock: $('metaStock'),
     btnUseSupply: $('btnUseSupply'),
+    dataTable: $('dataTable'), dataEmpty: $('dataEmpty'), rawCsv: $('rawCsv'),
+    dataStatus: $('dataStatus'), btnAddRow: $('btnAddRow'), btnExportCsv: $('btnExportCsv'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -1183,25 +1253,30 @@
   }
 
   // Turn parsed rows into the record list, honouring the header toggle.
-  function loadRows(rows) {
+  // keepIndex preserves the selected record across live edits.
+  function loadRows(rows, keepIndex) {
     rawRows = rows;
     // Drop fully-empty rows.
     const clean = rows.filter(r => r.some(c => (c != null && String(c).trim() !== '')));
     if (!clean.length) {
       records = [];
-      setImportInfo('File had no usable rows.', 'err');
+      recordIndex = 0;
+      setImportInfo('No list loaded — each row becomes one label.', '');
       updateRecordNav();
+      refreshDataUI();
       return;
     }
     const headerMode = el.headerToggle.classList.contains('on');
     const data = headerMode ? clean.slice(1) : clean;
     records = data.map(r => r.map(c => (c == null ? '' : String(c))));
-    recordIndex = 0;
+    if (!keepIndex || recordIndex >= records.length) recordIndex = 0;
+    if (recordIndex < 0) recordIndex = 0;
     const hdr = headerMode && clean[0] ? clean[0].map(c => String(c).trim()).filter(Boolean).join(' · ') : '';
     setImportInfo(`${records.length} label${records.length === 1 ? '' : 's'} loaded` +
       (hdr ? ` · columns: ${hdr}` : ''), 'loaded');
     updateRecordNav();
-    if (records.length) showRecord(0);
+    if (records.length) showRecord(recordIndex);
+    refreshDataUI();
   }
 
   function setImportInfo(msg, cls) {
@@ -1276,7 +1351,138 @@
     records = []; rawRows = []; recordIndex = 0;
     setImportInfo('No list loaded — each row becomes one label.', '');
     updateRecordNav();
+    refreshDataUI();
     log('Cleared imported list.', 'warn');
+  });
+
+  // ---- Bottom tab: live CSV data editor ----
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Serialize array-of-arrays back to CSV text (RFC-4180 quoting).
+  function csvSerialize(rows) {
+    return rows.map(r => r.map(cell => {
+      const s = cell == null ? '' : String(cell);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',')).join('\n');
+  }
+
+  // Render the editable grid from rawRows. Not called while a cell is focused
+  // (that would drop the caret) — cell edits mutate the DOM in place instead.
+  function renderDataTable() {
+    const t = el.dataTable;
+    if (!rawRows.length) {
+      t.style.display = 'none';
+      el.dataEmpty.style.display = '';
+      el.dataStatus.textContent = 'no data';
+      return;
+    }
+    el.dataEmpty.style.display = 'none';
+    t.style.display = '';
+    const headerMode = el.headerToggle.classList.contains('on');
+    const maxCols = rawRows.reduce((m, r) => Math.max(m, r.length), 1);
+    let html = '';
+    rawRows.forEach((row, r) => {
+      const isHeader = headerMode && r === 0;
+      html += `<tr class="${isHeader ? 'hrow' : ''}">`;
+      html += `<td class="rownum">${isHeader ? '' : (headerMode ? r : r + 1)}</td>`;
+      for (let c = 0; c < maxCols; c++) {
+        const val = row[c] == null ? '' : String(row[c]);
+        html += `<td class="cell" contenteditable="true" data-r="${r}" data-c="${c}">${escapeHtml(val)}</td>`;
+      }
+      html += `<td class="rowdel" data-del="${r}" title="delete row">×</td>`;
+      html += '</tr>';
+    });
+    t.innerHTML = html;
+    const n = headerMode ? Math.max(0, rawRows.length - 1) : rawRows.length;
+    el.dataStatus.textContent = `${n} row${n === 1 ? '' : 's'} · ${maxCols} col${maxCols === 1 ? '' : 's'}`;
+  }
+
+  // Re-render the table (unless a cell is focused) and refresh the raw textarea
+  // (unless it is focused). Keeps all three views consistent.
+  function refreshDataUI() {
+    const active = document.activeElement;
+    if (!(active && active.classList && active.classList.contains('cell'))) renderDataTable();
+    if (active !== el.rawCsv) el.rawCsv.value = csvSerialize(rawRows);
+    if (rawRows.length === 0) { el.dataTable.style.display = 'none'; el.dataEmpty.style.display = ''; }
+  }
+
+  // Recompute records + label preview from rawRows after a live edit, keeping
+  // the current selection. Does not rebuild the table (caller owns that).
+  function recomputeRecords() {
+    const clean = rawRows.filter(r => r.some(c => (c != null && String(c).trim() !== '')));
+    const headerMode = el.headerToggle.classList.contains('on');
+    const data = headerMode ? clean.slice(1) : clean;
+    records = data.map(r => r.map(c => (c == null ? '' : String(c))));
+    if (recordIndex >= records.length) recordIndex = Math.max(0, records.length - 1);
+    updateRecordNav();
+    if (records.length) { el.text.value = recordToText(records[recordIndex]); renderPreview(); }
+    else setImportInfo('No list loaded — each row becomes one label.', '');
+  }
+
+  // Live cell editing (event-delegated so it survives re-renders).
+  el.dataTable.addEventListener('input', (e) => {
+    const cell = e.target.closest && e.target.closest('.cell');
+    if (!cell) return;
+    const r = +cell.dataset.r, c = +cell.dataset.c;
+    if (!rawRows[r]) return;
+    while (rawRows[r].length <= c) rawRows[r].push('');
+    rawRows[r][c] = cell.textContent;
+    recomputeRecords();
+    el.rawCsv.value = csvSerialize(rawRows);   // raw view isn't focused here
+  });
+  // Keep cells single-line: Enter commits and blurs rather than inserting a break.
+  el.dataTable.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.closest && e.target.closest('.cell')) {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+  // Delete a row.
+  el.dataTable.addEventListener('click', (e) => {
+    const del = e.target.closest && e.target.closest('.rowdel');
+    if (!del) return;
+    rawRows.splice(+del.dataset.del, 1);
+    renderDataTable();
+    recomputeRecords();
+    el.rawCsv.value = csvSerialize(rawRows);
+  });
+
+  // Raw CSV editing → reparse into the grid + records live.
+  el.rawCsv.addEventListener('input', () => {
+    rawRows = parseCSV(el.rawCsv.value);
+    renderDataTable();
+    recomputeRecords();
+  });
+
+  el.btnAddRow.addEventListener('click', () => {
+    const cols = rawRows.reduce((m, r) => Math.max(m, r.length), 1);
+    rawRows.push(new Array(cols).fill(''));
+    renderDataTable();
+    recomputeRecords();
+    el.rawCsv.value = csvSerialize(rawRows);
+  });
+
+  el.btnExportCsv.addEventListener('click', () => {
+    if (!rawRows.length) { log('Nothing to export.', 'warn'); return; }
+    const blob = new Blob([csvSerialize(rawRows)], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'labels.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    log('Exported CSV.', 'ok');
+  });
+
+  // Tab switching for the bottom data bar.
+  document.querySelectorAll('.databar .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.databar .tab').forEach(t => t.classList.remove('on'));
+      document.querySelectorAll('.databar .tabpane').forEach(p => p.classList.remove('on'));
+      tab.classList.add('on');
+      document.getElementById('pane-' + tab.dataset.tab).classList.add('on');
+    });
   });
 
   // ---- Actions ----

@@ -527,6 +527,9 @@
     <div class="panel">
       <div class="panel-head"><h2>Typography</h2><span class="idx">FMT</span></div>
       <div class="panel-body">
+        <div class="toggle on" id="autoFitToggle" style="margin-bottom:12px;">
+          <span class="lbl2">Auto-fit text to label</span><span class="switch"></span>
+        </div>
         <div class="row" style="margin-bottom:14px;">
           <label class="field" style="margin-bottom:0;">
             <span class="lbl">Font size (pt)</span>
@@ -597,6 +600,29 @@
       </div>
     </div>
 
+    <div class="panel">
+      <div class="panel-head"><h2>Label Size</h2><span class="idx">DIM</span></div>
+      <div class="panel-body">
+        <div class="row" style="margin-bottom:12px;">
+          <label class="field" style="margin-bottom:0;">
+            <span class="lbl">Width (in)</span>
+            <input type="number" id="labelW" value="1.575" min="0.2" max="12" step="0.001" />
+          </label>
+          <label class="field" style="margin-bottom:0;">
+            <span class="lbl">Height (in)</span>
+            <input type="number" id="labelH" value="1.181" min="0.2" max="12" step="0.001" />
+          </label>
+        </div>
+        <div class="seg" id="sizePreset">
+          <button data-w="1.575" data-h="1.181">1.58 × 1.18 (landscape)</button>
+          <button data-w="1.181" data-h="1.575">1.18 × 1.58 (portrait)</button>
+        </div>
+        <div class="import-info" style="margin-top:10px;">
+          M5-01-425-FT is 1.58 × 1.18 in (40 × 30 mm). Adjust only if your printable area differs. The preview is true-scale — match it before printing.
+        </div>
+      </div>
+    </div>
+
   </section>
 
   <!-- RIGHT: STAGE -->
@@ -617,7 +643,7 @@
           </div>
         </div>
         <div class="stage-meta" style="margin-top:16px;">
-          <span><b>Stock:</b> 1.575 × 1.181 in</span>
+          <span><b>Stock:</b> <span id="metaStock">1.575 × 1.181 in</span></span>
           <span><b>Screen:</b> <span id="metaScreenPx">—</span></span>
           <span><b>Print target:</b> <span id="metaPrintDpi">300 DPI</span></span>
         </div>
@@ -646,9 +672,9 @@
 </script>
 
 <script type="module">
-  // ---- Label spec (Brady M5-01-425-FT) ----
-  const LABEL_W_IN = 1.575;
-  const LABEL_H_IN = 1.181;
+  // ---- Label spec (Brady M5-01-425-FT default; adjustable in the UI) ----
+  let LABEL_W_IN = 1.575;
+  let LABEL_H_IN = 1.181;
   const SCREEN_DPI = 150;          // on-screen true-scale render
   const PRINT_DPI_FALLBACK = 300;  // used if SDK doesn't report DPI
 
@@ -665,7 +691,8 @@
     text: $('text'), fontSize: $('fontSize'), lineSpacing: $('lineSpacing'),
     copies: $('copies'), cutOption: $('cutOption'),
     alignSeg: $('alignSeg'), boldToggle: $('boldToggle'), rotateToggle: $('rotateToggle'),
-    flagToggle: $('flagToggle'), fontFamily: $('fontFamily'),
+    flagToggle: $('flagToggle'), fontFamily: $('fontFamily'), autoFitToggle: $('autoFitToggle'),
+    labelW: $('labelW'), labelH: $('labelH'), sizePreset: $('sizePreset'), metaStock: $('metaStock'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -683,6 +710,7 @@
     rotate: false,
     flag: false,
     font: 'mono',
+    autoFit: true,
     connected: false,
   };
 
@@ -882,19 +910,33 @@
 
     // Text setup
     const lines = el.text.value.replace(/\r/g, '').split('\n');
-    const fontPt = Math.max(1, parseFloat(el.fontSize.value) || 12);
     const spacing = Math.max(0.5, parseFloat(el.lineSpacing.value) || 1.1);
-    // pt -> px at target dpi: 1pt = 1/72 in.
-    const fontPx = (fontPt / 72) * dpi;
-    const lineH = fontPx * spacing;
     const weight = state.bold ? '700' : '400';
     const family = state.font === 'mono'
       ? `"SF Mono", "JetBrains Mono", "Consolas", "Courier New", monospace`
       : `"Helvetica Neue", Arial, sans-serif`;
+    const margin = 0.06 * dpi; // ~0.06in inner margin
+    const padX = margin;
+
+    // Each text copy is drawn into a box: the whole label, or one flag half.
+    let boxW = wPx, boxH = hPx;
+    if (state.flag) {
+      if (wPx >= hPx) { boxH = hPx / 2; }   // stacked halves
+      else { boxW = wPx / 2; }              // side-by-side halves
+    }
+
+    // Font size: auto-fit to the box, or the manual pt value.
+    let fontPx;
+    if (state.autoFit) {
+      fontPx = fitFontPx(ctx, lines, boxW - 2 * margin, boxH - 2 * margin, spacing, weight, family);
+    } else {
+      const fontPt = Math.max(1, parseFloat(el.fontSize.value) || 12);
+      fontPx = (fontPt / 72) * dpi; // 1pt = 1/72 in
+    }
+    const lineH = fontPx * spacing;
     ctx.fillStyle = '#111111';
     ctx.font = `${weight} ${fontPx}px ${family}`;
     ctx.textBaseline = 'middle';
-    const padX = 0.06 * dpi; // ~0.06in inner margin
 
     // Draw the text block centered within a rectangle (x0,y0,w,h).
     // rot180 pre-rotates the copy 180° about the rect centre.
@@ -942,6 +984,25 @@
     }
   }
 
+  // Largest font (px) at which every line fits within availW × availH.
+  // Constrained by height (lines stacked at `spacing`) and the widest line.
+  function fitFontPx(ctx, lines, availW, availH, spacing, weight, family) {
+    const n = Math.max(1, lines.length);
+    const byHeight = availH / (n * spacing);
+    // Width scales linearly with font size; measure once at a reference size.
+    const ref = 100;
+    ctx.font = `${weight} ${ref}px ${family}`;
+    let maxW = 1;
+    for (const ln of lines) {
+      const w = ctx.measureText(ln).width;
+      if (w > maxW) maxW = w;
+    }
+    const byWidth = (availW * ref) / maxW;
+    let px = Math.min(byHeight, byWidth);
+    if (!isFinite(px) || px <= 0) px = 8;
+    return Math.max(4, px);
+  }
+
   // Dashed fold line marking where the flag doubles over (screen preview only).
   function drawFold(ctx, x, y, w, h, dir) {
     ctx.save();
@@ -964,6 +1025,7 @@
     el.dimW.textContent = `${wIn.toFixed(3)} in`;
     el.dimH.textContent = `${hIn.toFixed(3)} in`;
     el.metaScreenPx.textContent = `${el.preview.width} × ${el.preview.height} px @ ${SCREEN_DPI}dpi`;
+    el.metaStock.textContent = `${LABEL_W_IN.toFixed(3)} × ${LABEL_H_IN.toFixed(3)} in`;
     el.dpiTag.textContent = `${SCREEN_DPI} DPI`;
   }
 
@@ -976,6 +1038,26 @@
   el.fontFamily.addEventListener('change', () => {
     state.font = el.fontFamily.value;
     renderPreview();
+  });
+
+  // Label dimensions are user-adjustable so the app matches the real stock.
+  function applyLabelSize() {
+    const w = parseFloat(el.labelW.value);
+    const h = parseFloat(el.labelH.value);
+    if (w > 0) LABEL_W_IN = w;
+    if (h > 0) LABEL_H_IN = h;
+    renderPreview();
+  }
+  [el.labelW, el.labelH].forEach(n => {
+    n.addEventListener('input', applyLabelSize);
+    n.addEventListener('change', applyLabelSize);
+  });
+  el.sizePreset.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.labelW.value = btn.dataset.w;
+      el.labelH.value = btn.dataset.h;
+      applyLabelSize();
+    });
   });
 
   el.alignSeg.querySelectorAll('button').forEach(btn => {
@@ -997,6 +1079,14 @@
   bindToggle(el.boldToggle, 'bold');
   bindToggle(el.rotateToggle, 'rotate');
   bindToggle(el.flagToggle, 'flag');
+  bindToggle(el.autoFitToggle, 'autoFit');
+  // Grey out the manual font-size field while auto-fit is driving the size.
+  function syncFontSizeEnabled() {
+    el.fontSize.disabled = state.autoFit;
+    el.fontSize.style.opacity = state.autoFit ? '0.4' : '';
+  }
+  el.autoFitToggle.addEventListener('click', syncFontSizeEnabled);
+  syncFontSizeEnabled();
   // Header toggle: re-parse the loaded rows when flipped.
   el.headerToggle.addEventListener('click', () => {
     el.headerToggle.classList.toggle('on');
@@ -1035,9 +1125,11 @@
   }
 
   function recordToText(rec) {
-    return rec.map(c => (c == null ? '' : String(c)).trim())
-              .filter(c => c !== '')
-              .join('\n');
+    const cells = rec.map(c => (c == null ? '' : String(c)).trim());
+    // Drop only trailing empty cells (ragged rows) so a blank middle column
+    // still produces its intended blank line and column positions are kept.
+    while (cells.length && cells[cells.length - 1] === '') cells.pop();
+    return cells.join('\n');
   }
 
   // Turn parsed rows into the record list, honouring the header toggle.
@@ -1082,6 +1174,12 @@
       opt.textContent = `${i + 1}. ${preview.slice(0, 40)}`;
       el.recordSelect.appendChild(opt);
     });
+    syncNavControls();
+  }
+
+  // Sync the select value, counter, and prev/next disabled state to recordIndex.
+  function syncNavControls() {
+    if (!records.length) return;
     el.recordSelect.value = String(recordIndex);
     el.recordCount.textContent = `${recordIndex + 1} / ${records.length}`;
     el.btnPrev.disabled = recordIndex <= 0;
@@ -1089,13 +1187,10 @@
   }
 
   function showRecord(i) {
-    if (i < 0 || i >= records.length) return;
+    if (!Number.isInteger(i) || i < 0 || i >= records.length) return;
     recordIndex = i;
     el.text.value = recordToText(records[i]);
-    el.recordSelect.value = String(i);
-    el.recordCount.textContent = `${i + 1} / ${records.length}`;
-    el.btnPrev.disabled = i <= 0;
-    el.btnNext.disabled = i >= records.length - 1;
+    syncNavControls();
     renderPreview();
   }
 

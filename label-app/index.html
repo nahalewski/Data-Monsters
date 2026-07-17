@@ -733,6 +733,7 @@
     <button class="tab" data-tab="raw">⟨/⟩ Raw CSV</button>
     <span class="databar-status" id="dataStatus">no data</span>
     <div class="tabbar-actions">
+      <button id="btnImportData" class="linkbtn">↑ import</button>
       <button id="btnAddRow" class="linkbtn">+ row</button>
       <button id="btnAddCol" class="linkbtn">+ col</button>
       <button id="btnExportCsv" class="linkbtn">↓ export</button>
@@ -801,6 +802,7 @@
     btnUseSupply: $('btnUseSupply'),
     dataTable: $('dataTable'), dataEmpty: $('dataEmpty'), rawCsv: $('rawCsv'),
     dataStatus: $('dataStatus'), btnAddRow: $('btnAddRow'), btnExportCsv: $('btnExportCsv'),
+    btnImportData: $('btnImportData'),
     scanInput: $('scanInput'), scanMode: $('scanMode'), scanTarget: $('scanTarget'),
     scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
@@ -1537,6 +1539,9 @@
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);
   });
+
+  // Import from the data tab reuses the same file picker as the top panel.
+  el.btnImportData.addEventListener('click', () => el.fileInput.click());
 
   el.btnExportCsv.addEventListener('click', () => {
     if (!rawRows.length) { log('Nothing to export.', 'warn'); return; }

@@ -329,7 +329,7 @@
   .data-table tr.hrow td { background: var(--panel-2); color: var(--accent); font-weight: 700; position: sticky; top: 0; z-index: 1; }
   .data-table td.rownum {
     color: var(--ink-faint); text-align: right; user-select: none;
-    background: var(--panel-2); position: sticky; left: 0; min-width: 30px;
+    background: var(--panel-2); position: sticky; left: 34px; min-width: 30px;
   }
   .data-table tr.hrow td.rownum { z-index: 2; }
   .data-table td.rowdel { color: var(--ink-faint); cursor: pointer; text-align: center; user-select: none; width: 28px; }
@@ -356,6 +356,15 @@
   }
   .scan-count { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
   .scan-lbl { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); display: flex; align-items: center; gap: 6px; }
+  .printbar-lbl { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+  .printsel-btn { width: auto; padding: 8px 14px; margin-left: auto; }
+  /* Checkbox column in the data grid */
+  .data-table td.chk {
+    width: 34px; text-align: center; background: var(--panel-2);
+    position: sticky; left: 0; z-index: 1;
+  }
+  .data-table tr.hrow td.chk { z-index: 2; }
+  .data-table td.chk input { cursor: pointer; width: 15px; height: 15px; accent-color: var(--accent); }
 
   .raw-csv {
     width: 100%; min-height: 220px; max-height: 320px; box-sizing: border-box;
@@ -753,6 +762,12 @@
     </select>
     <span class="scan-count" id="scanCount">0 scans</span>
   </div>
+  <div class="scanbar printbar">
+    <span class="printbar-lbl">Print checked → each side of the label:</span>
+    <label class="scan-lbl">Port A <select id="portACol" class="scan-sel"></select></label>
+    <label class="scan-lbl">Port B <select id="portBCol" class="scan-sel"></select></label>
+    <button id="btnPrintSelected" class="btn printsel-btn" disabled>▶▶ Print checked (0)</button>
+  </div>
   <div class="tabpanes">
     <div class="tabpane on" id="pane-table">
       <div class="data-table-wrap" id="dataTableWrap">
@@ -805,6 +820,7 @@
     btnImportData: $('btnImportData'),
     scanInput: $('scanInput'), scanMode: $('scanMode'), scanTarget: $('scanTarget'),
     scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
+    portACol: $('portACol'), portBCol: $('portBCol'), btnPrintSelected: $('btnPrintSelected'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -959,6 +975,10 @@
     el.btnCut.disabled = !state.connected;
     el.btnPrintAll.disabled = !state.connected || records.length === 0;
     el.btnUseSupply.disabled = !state.connected;
+    if (el.btnPrintSelected) {
+      const n = [...selectedRows].filter(i => i < rawRows.length).length;
+      el.btnPrintSelected.disabled = !state.connected || n === 0;
+    }
   }
 
   // ---- Telemetry ----
@@ -1256,6 +1276,8 @@
 
   // ---- Import: CSV / Excel ----
   let rawRows = []; // last parsed array-of-arrays, kept so header toggle can re-slice.
+  let selectedRows = new Set(); // rawRows indices checked for port printing
+  let portsAutoSet = false;     // have we auto-detected Port A/B columns yet
 
   // Minimal RFC-4180-ish CSV parser (quotes, escaped quotes, embedded newlines).
   function parseCSV(text) {
@@ -1441,6 +1463,11 @@
     rawRows.forEach((row, r) => {
       const isHeader = headerMode && r === 0;
       html += `<tr class="${isHeader ? 'hrow' : ''}">`;
+      if (isHeader) {
+        html += `<td class="chk"><input type="checkbox" class="chkall" title="select all"></td>`;
+      } else {
+        html += `<td class="chk"><input type="checkbox" class="chkrow" data-r="${r}"${selectedRows.has(r) ? ' checked' : ''}></td>`;
+      }
       html += `<td class="rownum">${isHeader ? '' : (headerMode ? r : r + 1)}</td>`;
       for (let c = 0; c < maxCols; c++) {
         const val = row[c] == null ? '' : String(row[c]);
@@ -1450,9 +1477,30 @@
       html += '</tr>';
     });
     t.innerHTML = html;
+    // Reflect "all selected" state on the header checkbox.
+    const allChk = t.querySelector('.chkall');
+    if (allChk) {
+      const dataRows = dataRowIndices();
+      allChk.checked = dataRows.length > 0 && dataRows.every(i => selectedRows.has(i));
+    }
     const n = headerMode ? Math.max(0, rawRows.length - 1) : rawRows.length;
     el.dataStatus.textContent = `${n} row${n === 1 ? '' : 's'} · ${maxCols} col${maxCols === 1 ? '' : 's'}`;
     updateScanTargets();
+    updatePortCols();
+    updatePrintSelected();
+  }
+
+  // rawRows indices that are printable data rows (skip header + empty rows).
+  function dataRowIndices() {
+    const headerMode = el.headerToggle.classList.contains('on');
+    const out = [];
+    let seenHeader = false;
+    rawRows.forEach((row, ri) => {
+      if (!row.some(c => c != null && String(c).trim() !== '')) return;
+      if (headerMode && !seenHeader) { seenHeader = true; return; }
+      out.push(ri);
+    });
+    return out;
   }
 
   // Column count from header (if any) or the widest row; min 1.
@@ -1474,6 +1522,47 @@
     }
     el.scanTarget.innerHTML = opts;
     if (prev !== '' && +prev < cols) el.scanTarget.value = prev;
+  }
+
+  // List column names (header names, else "Column N").
+  function columnNames() {
+    const headerMode = el.headerToggle.classList.contains('on');
+    const cols = columnCount();
+    const names = [];
+    for (let c = 0; c < cols; c++) {
+      let name = `Column ${c + 1}`;
+      const h = headerMode && rawRows[0] ? rawRows[0][c] : null;
+      if (h != null && String(h).trim() !== '') name = String(h).trim();
+      names.push(name);
+    }
+    return names;
+  }
+
+  // Populate the Port A / Port B column selectors, auto-detecting once.
+  function updatePortCols() {
+    const names = columnNames();
+    const optsHtml = names.map((n, i) => `<option value="${i}">${escapeHtml(n)}</option>`).join('');
+    const prevA = el.portACol.value, prevB = el.portBCol.value;
+    el.portACol.innerHTML = optsHtml;
+    el.portBCol.innerHTML = optsHtml;
+    if (prevA !== '' && +prevA < names.length) el.portACol.value = prevA;
+    if (prevB !== '' && +prevB < names.length) el.portBCol.value = prevB;
+    if (!portsAutoSet && names.length) {
+      const findCol = (re) => names.findIndex(n => re.test(n));
+      let a = findCol(/port\s*a\b|(^|[^a-z])a($|[^a-z])/i);
+      let b = findCol(/port\s*b\b|(^|[^a-z])b($|[^a-z])/i);
+      if (a < 0) a = 0;
+      if (b < 0) b = Math.min(1, names.length - 1);
+      el.portACol.value = String(a);
+      el.portBCol.value = String(b);
+      portsAutoSet = true;
+    }
+  }
+
+  function updatePrintSelected() {
+    const n = [...selectedRows].filter(i => i < rawRows.length).length;
+    el.btnPrintSelected.textContent = `▶▶ Print checked (${n})`;
+    el.btnPrintSelected.disabled = !state.connected || n === 0;
   }
 
   // Re-render the table (unless a cell is focused) and refresh the raw textarea
@@ -1658,6 +1747,101 @@
     const name = window.prompt('New column name', 'Serial');
     if (name === null) return; // cancelled
     addColumn(name.trim());
+  });
+
+  // Row selection checkboxes (event-delegated so they survive re-renders).
+  el.dataTable.addEventListener('change', (e) => {
+    if (e.target.classList.contains('chkrow')) {
+      const r = +e.target.dataset.r;
+      if (e.target.checked) selectedRows.add(r); else selectedRows.delete(r);
+      const all = el.dataTable.querySelector('.chkall');
+      if (all) { const d = dataRowIndices(); all.checked = d.length > 0 && d.every(i => selectedRows.has(i)); }
+      updatePrintSelected();
+    } else if (e.target.classList.contains('chkall')) {
+      selectedRows.clear();
+      if (e.target.checked) dataRowIndices().forEach(i => selectedRows.add(i));
+      renderDataTable();
+    }
+  });
+
+  // Render a port label: Port A on one face, Port B on the other, so each side
+  // of the folded flag shows its end. Independent of the designer's settings.
+  function renderPortLabel(canvas, dpi, portA, portB) {
+    const wPx = Math.round(LABEL_W_IN * dpi);
+    const hPx = Math.round(LABEL_H_IN * dpi);
+    canvas.width = wPx; canvas.height = hPx;
+    const ctx = canvas.getContext('2d');
+    const isPrint = canvas === el.printCanvas;
+    ctx.fillStyle = isPrint ? '#ffffff' : '#f4f1e8';
+    ctx.fillRect(0, 0, wPx, hPx);
+    const margin = 0.06 * dpi;
+    if (wPx >= hPx) {
+      // Stacked halves (horizontal fold): bottom upright, top rotated 180°.
+      drawFittedText(ctx, portA, 0, hPx / 2, wPx, hPx / 2, margin, false);
+      drawFittedText(ctx, portB, 0, 0, wPx, hPx / 2, margin, true);
+    } else {
+      // Side-by-side halves (vertical fold): both upright.
+      drawFittedText(ctx, portA, 0, 0, wPx / 2, hPx, margin, false);
+      drawFittedText(ctx, portB, wPx / 2, 0, wPx / 2, hPx, margin, false);
+    }
+  }
+
+  // Auto-fit and draw text centered in a box, optionally rotated 180°.
+  function drawFittedText(ctx, text, x0, y0, w, h, margin, rot180) {
+    const lines = String(text == null ? '' : text).split('\n');
+    const family = `"SF Mono", "JetBrains Mono", "Consolas", "Courier New", monospace`;
+    const weight = '700', spacing = 1.15;
+    const fontPx = fitFontPx(ctx, lines, w - 2 * margin, h - 2 * margin, spacing, weight, family);
+    const lineH = fontPx * spacing;
+    ctx.save();
+    if (rot180) { const cx = x0 + w / 2, cy = y0 + h / 2; ctx.translate(cx, cy); ctx.rotate(Math.PI); ctx.translate(-cx, -cy); }
+    ctx.fillStyle = '#111111';
+    ctx.font = `${weight} ${fontPx}px ${family}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    const blockH = lineH * lines.length;
+    let y = y0 + h / 2 - blockH / 2 + lineH / 2;
+    for (const ln of lines) { ctx.fillText(ln, x0 + w / 2, y); y += lineH; }
+    ctx.restore();
+  }
+
+  // Print each checked row as a Port A / Port B two-sided label.
+  el.btnPrintSelected.addEventListener('click', async () => {
+    if (!bradySdk) return;
+    const idxs = [...selectedRows].filter(i => i < rawRows.length).sort((a, b) => a - b);
+    if (!idxs.length) { log('No rows checked.', 'warn'); return; }
+    const aCol = Math.max(0, parseInt(el.portACol.value, 10) || 0);
+    const bCol = Math.max(0, parseInt(el.portBCol.value, 10) || 0);
+    if (!window.confirm(`Print ${idxs.length} label(s) with Port A / Port B on each side?`)) return;
+    el.btnPrintSelected.disabled = true;
+    const total = idxs.length;
+    try {
+      const copies = Math.max(1, parseInt(el.copies.value, 10) || 1);
+      const cut = parseInt(el.cutOption.value, 10);
+      if (typeof bradySdk.setCopies === 'function') bradySdk.setCopies(copies);
+      if (typeof bradySdk.setCutOption === 'function') bradySdk.setCutOption(cut);
+      const dpi = Number(safeGet(() => bradySdk.dotsPerInch, null)) || PRINT_DPI_FALLBACK;
+      for (let k = 0; k < total; k++) {
+        const row = rawRows[idxs[k]];
+        const portA = row[aCol] == null ? '' : String(row[aCol]);
+        const portB = row[bCol] == null ? '' : String(row[bCol]);
+        setStatus(`Printing ${k + 1}/${total}…`, 'busy');
+        renderPortLabel(el.printCanvas, dpi, portA, portB);
+        const img = await canvasToImage(el.printCanvas);
+        const ok = await bradySdk.printBitmap(img, 0, 0);
+        if (ok === false) throw new Error(`printBitmap failed on label ${k + 1}`);
+        log(`Printed A:${portA} / B:${portB} (${k + 1}/${total}).`, 'ok');
+      }
+      setStatus('Connected', 'ok');
+      log(`Port label batch complete — ${total} label(s).`, 'ok');
+    } catch (e) {
+      setStatus('Error', 'err');
+      log('Port print failed: ' + (e.message || e), 'err');
+      setTimeout(() => { if (state.connected) setStatus('Connected', 'ok'); }, 1800);
+    } finally {
+      updateButtons();
+      updatePrintSelected();
+    }
   });
 
   // ---- Actions ----

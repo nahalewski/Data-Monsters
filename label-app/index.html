@@ -665,6 +665,13 @@
             </select>
           </label>
         </div>
+        <label class="field">
+          <span class="lbl">Print darkness <span id="darknessVal" class="mono-accent">170</span></span>
+          <input type="range" id="darkness" min="110" max="235" step="5" value="170" style="width:100%;" />
+        </label>
+        <div class="import-info" style="margin:-4px 0 12px;">
+          Prints as pure black/white (no faint grays). Slide right if text still looks light.
+        </div>
         <button id="btnPrint" class="btn primary" disabled style="margin-bottom:10px;">▶ Print Label</button>
         <button id="btnPrintAll" class="btn" disabled style="margin-bottom:10px; display:none;">▶▶ Print All Labels</button>
         <div class="btn-grid">
@@ -810,7 +817,7 @@
     telName: $('telName'), telModel: $('telModel'), telBatt: $('telBatt'),
     telSupply: $('telSupply'), telSupplyDim: $('telSupplyDim'), telDpi: $('telDpi'),
     text: $('text'), fontSize: $('fontSize'), lineSpacing: $('lineSpacing'),
-    copies: $('copies'), cutOption: $('cutOption'),
+    copies: $('copies'), cutOption: $('cutOption'), darkness: $('darkness'), darknessVal: $('darknessVal'),
     alignSeg: $('alignSeg'), boldToggle: $('boldToggle'), rotateToggle: $('rotateToggle'),
     flagToggle: $('flagToggle'), fontFamily: $('fontFamily'), autoFitToggle: $('autoFitToggle'),
     labelW: $('labelW'), labelH: $('labelH'), sizePreset: $('sizePreset'), metaStock: $('metaStock'),
@@ -1172,6 +1179,10 @@
   el.fontFamily.addEventListener('change', () => {
     state.font = el.fontFamily.value;
     renderPreview();
+  });
+
+  el.darkness.addEventListener('input', () => {
+    el.darknessVal.textContent = el.darkness.value;
   });
 
   // Label dimensions are user-adjustable so the app matches the real stock.
@@ -1827,7 +1838,7 @@
         const portB = row[bCol] == null ? '' : String(row[bCol]);
         setStatus(`Printing ${k + 1}/${total}…`, 'busy');
         renderPortLabel(el.printCanvas, dpi, portA, portB);
-        const img = await canvasToImage(el.printCanvas);
+        const img = await printCanvasToImage();
         const ok = await bradySdk.printBitmap(img, 0, 0);
         if (ok === false) throw new Error(`printBitmap failed on label ${k + 1}`);
         log(`Printed A:${portA} / B:${portB} (${k + 1}/${total}).`, 'ok');
@@ -1895,7 +1906,7 @@
       renderLabel(el.printCanvas, dpi);
       log(`Rasterizing ${el.printCanvas.width}×${el.printCanvas.height}px @ ${dpi}dpi · ${copies} copy(ies) · cut=${cut}`);
 
-      const img = await canvasToImage(el.printCanvas);
+      const img = await printCanvasToImage();
       const ok = await bradySdk.printBitmap(img, 0, 0); // xOffset,yOffset in inches
       if (ok === false) throw new Error('printBitmap reported failure');
       setStatus('Connected', 'ok');
@@ -1919,6 +1930,29 @@
     });
   }
 
+  // Thermal printers fire a dot or they don't — anti-aliased gray edges print
+  // faint or drop out. Flatten the canvas to pure black/white so every text
+  // pixel prints fully dark. Higher threshold = more pixels go black (darker).
+  function binarizeCanvas(canvas) {
+    const ctx = canvas.getContext('2d');
+    const threshold = parseInt(el.darkness.value, 10) || 170;
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const v = lum < threshold ? 0 : 255;
+      d[i] = d[i + 1] = d[i + 2] = v;
+      d[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // Binarize the print canvas, then hand it to printBitmap as an image.
+  function printCanvasToImage() {
+    binarizeCanvas(el.printCanvas);
+    return canvasToImage(el.printCanvas);
+  }
+
   // Batch-print every imported record in order.
   el.btnPrintAll.addEventListener('click', async () => {
     if (!bradySdk || !records.length) return;
@@ -1938,7 +1972,7 @@
         showRecord(i); // updates text + on-screen preview so progress is visible
         setStatus(`Printing ${i + 1}/${total}…`, 'busy');
         renderLabel(el.printCanvas, dpi);
-        const img = await canvasToImage(el.printCanvas);
+        const img = await printCanvasToImage();
         const ok = await bradySdk.printBitmap(img, 0, 0);
         if (ok === false) throw new Error(`printBitmap failed on label ${i + 1}`);
         log(`Printed ${i + 1}/${total}.`, 'ok');

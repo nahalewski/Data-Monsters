@@ -1103,14 +1103,12 @@
     }
 
     if (state.flag) {
-      // Self-laminating wraparound flag: the same text prints on both panels so
-      // it reads identically on each face once folded at the perforation. The
-      // perforation splits the height, so the two panels are stacked top/bottom
-      // and the fold is about that horizontal line. A fold about a horizontal
-      // axis inverts the text, so the far (top) copy is pre-rotated 180° — after
-      // folding, both read upright.
-      drawBlock(0, hPx / 2, wPx, hPx / 2, false); // bottom: upright reference
-      drawBlock(0, 0, wPx, hPx / 2, true);        // top: rotated 180°
+      // Self-laminating wraparound flag ("∀ A" in Brady's app): the same text
+      // prints on both panels, split at the mid-height perforation. Top panel
+      // upright, bottom panel rotated 180° (matching the Brady layout) so both
+      // faces read upright once folded at the perforation.
+      drawBlock(0, 0, wPx, hPx / 2, false);       // top: upright reference
+      drawBlock(0, hPx / 2, wPx, hPx / 2, true);  // bottom: rotated 180°
       if (!isPrint) drawFold(ctx, 0, hPx / 2, wPx, hPx / 2, 'h');
     } else {
       drawBlock(0, 0, wPx, hPx, false);
@@ -1778,10 +1776,11 @@
     ctx.fillStyle = isPrint ? '#ffffff' : '#f4f1e8';
     ctx.fillRect(0, 0, wPx, hPx);
     const margin = 0.06 * dpi;
-    // Perforation splits the height: Port A on the bottom panel (upright),
-    // Port B on the top panel (rotated 180° so it reads upright once folded).
-    drawFittedText(ctx, portA, 0, hPx / 2, wPx, hPx / 2, margin, false);
-    drawFittedText(ctx, portB, 0, 0, wPx, hPx / 2, margin, true);
+    // Perforation splits the height (Brady "B A" flag): Port A on the top panel
+    // (upright), Port B on the bottom panel (rotated 180° so it reads upright
+    // once folded). Matches the Brady app's panel order.
+    drawFittedText(ctx, portA, 0, 0, wPx, hPx / 2, margin, false);
+    drawFittedText(ctx, portB, 0, hPx / 2, wPx, hPx / 2, margin, true);
   }
 
   // Auto-fit and draw text centered in a box, optionally rotated 180°.

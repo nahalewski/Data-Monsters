@@ -1035,9 +1035,11 @@
   }
 
   function recordToText(rec) {
-    return rec.map(c => (c == null ? '' : String(c)).trim())
-              .filter(c => c !== '')
-              .join('\n');
+    const cells = rec.map(c => (c == null ? '' : String(c)).trim());
+    // Drop only trailing empty cells (ragged rows) so a blank middle column
+    // still produces its intended blank line and column positions are kept.
+    while (cells.length && cells[cells.length - 1] === '') cells.pop();
+    return cells.join('\n');
   }
 
   // Turn parsed rows into the record list, honouring the header toggle.
@@ -1082,6 +1084,12 @@
       opt.textContent = `${i + 1}. ${preview.slice(0, 40)}`;
       el.recordSelect.appendChild(opt);
     });
+    syncNavControls();
+  }
+
+  // Sync the select value, counter, and prev/next disabled state to recordIndex.
+  function syncNavControls() {
+    if (!records.length) return;
     el.recordSelect.value = String(recordIndex);
     el.recordCount.textContent = `${recordIndex + 1} / ${records.length}`;
     el.btnPrev.disabled = recordIndex <= 0;
@@ -1089,13 +1097,10 @@
   }
 
   function showRecord(i) {
-    if (i < 0 || i >= records.length) return;
+    if (!Number.isInteger(i) || i < 0 || i >= records.length) return;
     recordIndex = i;
     el.text.value = recordToText(records[i]);
-    el.recordSelect.value = String(i);
-    el.recordCount.textContent = `${i + 1} / ${records.length}`;
-    el.btnPrev.disabled = i <= 0;
-    el.btnNext.disabled = i >= records.length - 1;
+    syncNavControls();
     renderPreview();
   }
 

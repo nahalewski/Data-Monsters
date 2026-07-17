@@ -355,6 +355,7 @@
     color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 8px 9px; outline: none;
   }
   .scan-count { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
+  .scan-lbl { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); display: flex; align-items: center; gap: 6px; }
 
   .raw-csv {
     width: 100%; min-height: 220px; max-height: 320px; box-sizing: border-box;
@@ -733,18 +734,22 @@
     <span class="databar-status" id="dataStatus">no data</span>
     <div class="tabbar-actions">
       <button id="btnAddRow" class="linkbtn">+ row</button>
+      <button id="btnAddCol" class="linkbtn">+ col</button>
       <button id="btnExportCsv" class="linkbtn">↓ export</button>
     </div>
   </div>
   <div class="scanbar">
     <span class="scan-ico" id="scanIco">▌▎▌▏▌▎</span>
     <input type="text" id="scanInput" class="scan-input" autocomplete="off" autocapitalize="off"
-           spellcheck="false" placeholder="Click here and scan — a USB-C / USB barcode scanner types the code + Enter into the CSV" />
+           spellcheck="false" placeholder="Click here and scan — a USB-C / USB barcode scanner types the serial + Enter into the field" />
+    <label class="scan-lbl">into
+      <select id="scanTarget" class="scan-sel" title="Column the scan fills"></select>
+    </label>
     <select id="scanMode" class="scan-sel" title="Where each scan goes">
-      <option value="newrow">→ new row</option>
-      <option value="sequential">→ fill columns L→R</option>
+      <option value="record">on selected record</option>
+      <option value="newrow">as a new row</option>
+      <option value="sequential">fill columns L→R</option>
     </select>
-    <select id="scanTarget" class="scan-sel" title="Column the scan fills"></select>
     <span class="scan-count" id="scanCount">0 scans</span>
   </div>
   <div class="tabpanes">
@@ -797,7 +802,7 @@
     dataTable: $('dataTable'), dataEmpty: $('dataEmpty'), rawCsv: $('rawCsv'),
     dataStatus: $('dataStatus'), btnAddRow: $('btnAddRow'), btnExportCsv: $('btnExportCsv'),
     scanInput: $('scanInput'), scanMode: $('scanMode'), scanTarget: $('scanTarget'),
-    scanCount: $('scanCount'), scanIco: $('scanIco'),
+    scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -822,6 +827,7 @@
   // Imported label list. Each record is an array of cell strings (one row).
   let records = [];
   let recordIndex = 0;
+  let recordRawMap = []; // records[i] came from rawRows[recordRawMap[i]]
 
   // ---- Logging ----
   function log(msg, kind = '') {
@@ -1285,30 +1291,44 @@
     return cells.join('\n');
   }
 
+  // Derive the label records from rawRows, honouring the header toggle. Skips
+  // fully-empty rows and (in header mode) the first non-empty row. Also returns
+  // a map from record index → rawRows index so edits can write straight back.
+  function deriveRecords() {
+    const headerMode = el.headerToggle.classList.contains('on');
+    const recs = [], map = [];
+    let seenHeader = false;
+    rawRows.forEach((row, ri) => {
+      if (!row.some(c => c != null && String(c).trim() !== '')) return; // empty row
+      if (headerMode && !seenHeader) { seenHeader = true; return; }      // header row
+      recs.push(row.map(c => (c == null ? '' : String(c))));
+      map.push(ri);
+    });
+    return { records: recs, map };
+  }
+
   // Turn parsed rows into the record list, honouring the header toggle.
   // keepIndex preserves the selected record across live edits.
   function loadRows(rows, keepIndex) {
     rawRows = rows;
-    // Drop fully-empty rows.
-    const clean = rows.filter(r => r.some(c => (c != null && String(c).trim() !== '')));
-    if (!clean.length) {
-      records = [];
+    const d = deriveRecords();
+    records = d.records; recordRawMap = d.map;
+    if (!records.length) {
       recordIndex = 0;
       setImportInfo('No list loaded — each row becomes one label.', '');
       updateRecordNav();
       refreshDataUI();
       return;
     }
-    const headerMode = el.headerToggle.classList.contains('on');
-    const data = headerMode ? clean.slice(1) : clean;
-    records = data.map(r => r.map(c => (c == null ? '' : String(c))));
     if (!keepIndex || recordIndex >= records.length) recordIndex = 0;
     if (recordIndex < 0) recordIndex = 0;
-    const hdr = headerMode && clean[0] ? clean[0].map(c => String(c).trim()).filter(Boolean).join(' · ') : '';
+    const headerMode = el.headerToggle.classList.contains('on');
+    const firstRow = rawRows.find(r => r.some(c => c != null && String(c).trim() !== ''));
+    const hdr = headerMode && firstRow ? firstRow.map(c => String(c).trim()).filter(Boolean).join(' · ') : '';
     setImportInfo(`${records.length} label${records.length === 1 ? '' : 's'} loaded` +
       (hdr ? ` · columns: ${hdr}` : ''), 'loaded');
     updateRecordNav();
-    if (records.length) showRecord(recordIndex);
+    showRecord(recordIndex);
     refreshDataUI();
   }
 
@@ -1466,11 +1486,10 @@
   // Recompute records + label preview from rawRows after a live edit, keeping
   // the current selection. Does not rebuild the table (caller owns that).
   function recomputeRecords() {
-    const clean = rawRows.filter(r => r.some(c => (c != null && String(c).trim() !== '')));
-    const headerMode = el.headerToggle.classList.contains('on');
-    const data = headerMode ? clean.slice(1) : clean;
-    records = data.map(r => r.map(c => (c == null ? '' : String(c))));
+    const d = deriveRecords();
+    records = d.records; recordRawMap = d.map;
     if (recordIndex >= records.length) recordIndex = Math.max(0, records.length - 1);
+    if (recordIndex < 0) recordIndex = 0;
     updateRecordNav();
     if (records.length) { el.text.value = recordToText(records[recordIndex]); renderPreview(); }
     else setImportInfo('No list loaded — each row becomes one label.', '');
@@ -1556,7 +1575,19 @@
     value = value.trim();
     if (!value) return;
     const cols = columnCount();
-    if (el.scanMode.value === 'sequential') {
+    const mode = el.scanMode.value;
+    const target = Math.max(0, parseInt(el.scanTarget.value, 10) || 0);
+
+    if (mode === 'record' && records.length && recordRawMap[recordIndex] != null) {
+      // Write the serial into the selected record's target column, then advance.
+      const row = rawRows[recordRawMap[recordIndex]];
+      while (row.length <= target) row.push('');
+      row[target] = value;
+      renderDataTable();
+      recomputeRecords();
+      if (recordIndex < records.length - 1) showRecord(recordIndex + 1);
+      else showRecord(recordIndex);
+    } else if (mode === 'sequential') {
       // Fill the working row (the last row) left→right; wrap to a new row.
       if (scanSeqCol <= 0 || !rawRows.length || scanSeqCol >= cols) {
         rawRows.push(new Array(cols).fill(''));
@@ -1566,21 +1597,42 @@
       while (row.length <= scanSeqCol) row.push('');
       row[scanSeqCol] = value;
       scanSeqCol++;
+      renderDataTable();
+      recomputeRecords();
     } else {
-      // New row per scan; value goes into the selected column.
-      const target = Math.max(0, parseInt(el.scanTarget.value, 10) || 0);
+      // New row per scan (also the fallback when "on selected record" has no
+      // records yet); value goes into the selected column.
       const row = new Array(Math.max(cols, target + 1)).fill('');
       row[target] = value;
       rawRows.push(row);
+      renderDataTable();
+      recomputeRecords();
     }
-    renderDataTable();
-    recomputeRecords();
+
     el.rawCsv.value = csvSerialize(rawRows);
     scanCount++;
     el.scanCount.textContent = `${scanCount} scan${scanCount === 1 ? '' : 's'}`;
     flashScan();
     el.scanInput.value = '';
     el.scanInput.focus(); // keep focus for rapid scanning
+  }
+
+  // Append a new column (optionally named — e.g. "Serial") and target it.
+  function addColumn(name) {
+    const cols = columnCount();
+    const headerMode = el.headerToggle.classList.contains('on');
+    if (!rawRows.length) {
+      rawRows.push([name || '']);
+    } else {
+      rawRows.forEach((row, i) => {
+        while (row.length < cols) row.push('');
+        row.push(headerMode && i === 0 ? (name || '') : '');
+      });
+    }
+    renderDataTable();
+    recomputeRecords();
+    el.rawCsv.value = csvSerialize(rawRows);
+    el.scanTarget.value = String(cols); // select the new column for scanning
   }
 
   // Scanners terminate with Enter (most) or Tab; treat both as end-of-scan.
@@ -1591,9 +1643,16 @@
     }
   });
   el.scanMode.addEventListener('change', () => {
-    // "into column" only applies to new-row mode; reset the sequential pointer.
-    el.scanTarget.style.display = el.scanMode.value === 'sequential' ? 'none' : '';
+    // "into column" applies to record + new-row modes, not sequential.
+    const seq = el.scanMode.value === 'sequential';
+    el.scanTarget.closest('.scan-lbl').style.display = seq ? 'none' : '';
     scanSeqCol = 0;
+  });
+
+  el.btnAddCol.addEventListener('click', () => {
+    const name = window.prompt('New column name', 'Serial');
+    if (name === null) return; // cancelled
+    addColumn(name.trim());
   });
 
   // ---- Actions ----

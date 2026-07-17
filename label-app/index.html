@@ -336,6 +336,26 @@
   .data-table td.rowdel:hover { color: var(--danger); }
   .data-empty { padding: 26px 18px; font-family: var(--mono); font-size: 12px; color: var(--ink-faint); line-height: 1.6; }
   .data-empty b { color: var(--accent); }
+  /* Barcode scan bar */
+  .scanbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 16px; border-bottom: 1px solid var(--line-soft); background: var(--panel);
+  }
+  .scan-ico { font-family: var(--mono); color: var(--ink-faint); letter-spacing: -1px; transition: color .1s; }
+  .scan-ico.hit { color: var(--accent); }
+  .scan-input {
+    flex: 1; min-width: 200px; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 2px; color: var(--ink); font-family: var(--mono); font-size: 13px;
+    padding: 9px 11px; outline: none; transition: border-color .1s, box-shadow .1s;
+  }
+  .scan-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,229,160,.15); }
+  .scan-input.hit { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,229,160,.4); }
+  .scan-sel {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 2px;
+    color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 8px 9px; outline: none;
+  }
+  .scan-count { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
+
   .raw-csv {
     width: 100%; min-height: 220px; max-height: 320px; box-sizing: border-box;
     border: none; background: #080a0d; color: var(--ink);
@@ -716,6 +736,17 @@
       <button id="btnExportCsv" class="linkbtn">↓ export</button>
     </div>
   </div>
+  <div class="scanbar">
+    <span class="scan-ico" id="scanIco">▌▎▌▏▌▎</span>
+    <input type="text" id="scanInput" class="scan-input" autocomplete="off" autocapitalize="off"
+           spellcheck="false" placeholder="Click here and scan — a USB-C / USB barcode scanner types the code + Enter into the CSV" />
+    <select id="scanMode" class="scan-sel" title="Where each scan goes">
+      <option value="newrow">→ new row</option>
+      <option value="sequential">→ fill columns L→R</option>
+    </select>
+    <select id="scanTarget" class="scan-sel" title="Column the scan fills"></select>
+    <span class="scan-count" id="scanCount">0 scans</span>
+  </div>
   <div class="tabpanes">
     <div class="tabpane on" id="pane-table">
       <div class="data-table-wrap" id="dataTableWrap">
@@ -765,6 +796,8 @@
     btnUseSupply: $('btnUseSupply'),
     dataTable: $('dataTable'), dataEmpty: $('dataEmpty'), rawCsv: $('rawCsv'),
     dataStatus: $('dataStatus'), btnAddRow: $('btnAddRow'), btnExportCsv: $('btnExportCsv'),
+    scanInput: $('scanInput'), scanMode: $('scanMode'), scanTarget: $('scanTarget'),
+    scanCount: $('scanCount'), scanIco: $('scanIco'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -1397,6 +1430,28 @@
     t.innerHTML = html;
     const n = headerMode ? Math.max(0, rawRows.length - 1) : rawRows.length;
     el.dataStatus.textContent = `${n} row${n === 1 ? '' : 's'} · ${maxCols} col${maxCols === 1 ? '' : 's'}`;
+    updateScanTargets();
+  }
+
+  // Column count from header (if any) or the widest row; min 1.
+  function columnCount() {
+    return Math.max(1, rawRows.reduce((m, r) => Math.max(m, r.length), 1));
+  }
+
+  // Populate the "scan into column" selector from the current columns.
+  function updateScanTargets() {
+    const headerMode = el.headerToggle.classList.contains('on');
+    const cols = columnCount();
+    const prev = el.scanTarget.value;
+    let opts = '';
+    for (let c = 0; c < cols; c++) {
+      let name = `Column ${c + 1}`;
+      const h = headerMode && rawRows[0] ? rawRows[0][c] : null;
+      if (h != null && String(h).trim() !== '') name = String(h).trim();
+      opts += `<option value="${c}">${escapeHtml(name)}</option>`;
+    }
+    el.scanTarget.innerHTML = opts;
+    if (prev !== '' && +prev < cols) el.scanTarget.value = prev;
   }
 
   // Re-render the table (unless a cell is focused) and refresh the raw textarea
@@ -1483,6 +1538,62 @@
       tab.classList.add('on');
       document.getElementById('pane-' + tab.dataset.tab).classList.add('on');
     });
+  });
+
+  // ---- Barcode scanning into the CSV ----
+  // USB-C / USB scanners act as HID keyboards: they type the code then send
+  // Enter (or Tab). We capture that in the scan box and route it into the grid.
+  let scanCount = 0;
+  let scanSeqCol = 0; // next column to fill in "fill columns L→R" mode
+
+  function flashScan() {
+    el.scanInput.classList.add('hit');
+    el.scanIco.classList.add('hit');
+    setTimeout(() => { el.scanInput.classList.remove('hit'); el.scanIco.classList.remove('hit'); }, 160);
+  }
+
+  function onScan(value) {
+    value = value.trim();
+    if (!value) return;
+    const cols = columnCount();
+    if (el.scanMode.value === 'sequential') {
+      // Fill the working row (the last row) left→right; wrap to a new row.
+      if (scanSeqCol <= 0 || !rawRows.length || scanSeqCol >= cols) {
+        rawRows.push(new Array(cols).fill(''));
+        scanSeqCol = 0;
+      }
+      const row = rawRows[rawRows.length - 1];
+      while (row.length <= scanSeqCol) row.push('');
+      row[scanSeqCol] = value;
+      scanSeqCol++;
+    } else {
+      // New row per scan; value goes into the selected column.
+      const target = Math.max(0, parseInt(el.scanTarget.value, 10) || 0);
+      const row = new Array(Math.max(cols, target + 1)).fill('');
+      row[target] = value;
+      rawRows.push(row);
+    }
+    renderDataTable();
+    recomputeRecords();
+    el.rawCsv.value = csvSerialize(rawRows);
+    scanCount++;
+    el.scanCount.textContent = `${scanCount} scan${scanCount === 1 ? '' : 's'}`;
+    flashScan();
+    el.scanInput.value = '';
+    el.scanInput.focus(); // keep focus for rapid scanning
+  }
+
+  // Scanners terminate with Enter (most) or Tab; treat both as end-of-scan.
+  el.scanInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      onScan(el.scanInput.value);
+    }
+  });
+  el.scanMode.addEventListener('change', () => {
+    // "into column" only applies to new-row mode; reset the sequential pointer.
+    el.scanTarget.style.display = el.scanMode.value === 'sequential' ? 'none' : '';
+    scanSeqCol = 0;
   });
 
   // ---- Actions ----
@@ -1627,6 +1738,7 @@
   // ---- Boot ----
   setStatus('Not connected');
   el.metaPrintDpi.textContent = `${PRINT_DPI_FALLBACK} DPI`;
+  updateScanTargets();
   renderPreview();
   log('M511 Label Studio ready.');
   if (sdkOk) initSdk();

@@ -686,21 +686,21 @@
       <div class="panel-body">
         <div class="row" style="margin-bottom:12px;">
           <label class="field" style="margin-bottom:0;">
-            <span class="lbl">Width (in)</span>
+            <span class="lbl">Cell width (in)</span>
             <input type="number" id="labelW" value="1.18" min="0.2" max="12" step="0.001" />
           </label>
           <label class="field" style="margin-bottom:0;">
-            <span class="lbl">Height (in)</span>
-            <input type="number" id="labelH" value="3.16" min="0.2" max="12" step="0.001" />
+            <span class="lbl">Cell height (in)</span>
+            <input type="number" id="labelH" value="1.58" min="0.2" max="12" step="0.001" />
           </label>
         </div>
         <div class="seg" id="sizePreset" style="margin-bottom:10px;">
-          <button data-w="1.18" data-h="3.16">1.18 × 3.16 (full, 2 panels)</button>
-          <button data-w="1.18" data-h="1.58">1.18 × 1.58 (one panel)</button>
+          <button data-w="1.18" data-h="1.58">1.18 × 1.58 (M5-01-425-FT cell)</button>
+          <button data-w="1.575" data-h="1.181">1.575 × 1.181 (rotated)</button>
         </div>
         <button id="btnUseSupply" class="btn" disabled>⤓ Use printer's label size</button>
         <div class="import-info" style="margin-top:10px;">
-          M5-01-425-FT is 1.18 × 3.16 in — a perforation splits the height into two 1.18 × 1.58 panels that fold into a flag. Flag / Port A·B printing splits at that perforation. The preview is true-scale — match it before printing.
+          This is <b>one</b> pre-sized cell (Brady reports ~1.18 × 1.58 in). Flag and Port A·B modes print <b>two</b> cells stacked, spanning the perforation — so text stays full-size on each panel. “Use printer's label size” fills the cell size from the loaded supply.
         </div>
       </div>
     </div>
@@ -719,13 +719,13 @@
         <div class="drawing">
           <div class="label-frame" id="labelFrame">
             <div class="dim dim-w" id="dimW">1.18 in</div>
-            <div class="dim dim-h" id="dimH">3.16 in</div>
+            <div class="dim dim-h" id="dimH">1.58 in</div>
             <canvas id="preview"></canvas>
             <div class="part-tag">BRADY M5-01-425-FT · DIE-CUT</div>
           </div>
         </div>
         <div class="stage-meta" style="margin-top:16px;">
-          <span><b>Stock:</b> <span id="metaStock">1.18 × 3.16 in</span></span>
+          <span><b>Stock:</b> <span id="metaStock">1.18 × 1.58 in/cell</span></span>
           <span><b>Screen:</b> <span id="metaScreenPx">—</span></span>
           <span><b>Print target:</b> <span id="metaPrintDpi">300 DPI</span></span>
         </div>
@@ -801,11 +801,11 @@
 
 <script type="module">
   // ---- Label spec (Brady M5-01-425-FT default; adjustable in the UI) ----
-  // Full die-cut sticker: 1.18 in wide × 3.16 in tall, with a perforation at
-  // the middle of the height (1.58 in) splitting it into two 1.18 × 1.58 panels
-  // that fold together into a flag.
+  // LABEL_W_IN × LABEL_H_IN is ONE pre-sized cell/panel (Brady reports
+  // 1.181 × 1.575 in). Flag / Port A·B modes print TWO cells stacked, so the
+  // full flag spans the perforation (~1.18 × 3.15 in).
   let LABEL_W_IN = 1.18;
-  let LABEL_H_IN = 3.16;
+  let LABEL_H_IN = 1.58;
   const SCREEN_DPI = 150;          // on-screen true-scale render
   const PRINT_DPI_FALLBACK = 300;  // used if SDK doesn't report DPI
 
@@ -1028,14 +1028,18 @@
 
   // ---- Rendering ----
   // Draw the label onto a given canvas at a target dpi. Returns nothing.
+  // LABEL_W_IN × LABEL_H_IN is ONE panel/cell. Flag mode prints two cells
+  // stacked (spanning the perforation), each a full-size cell.
   function renderLabel(canvas, dpi) {
     const rotate = state.rotate;
-    // Physical dims; when rotated, swap so text runs along the long edge.
-    const wIn = rotate ? LABEL_H_IN : LABEL_W_IN;
-    const hIn = rotate ? LABEL_W_IN : LABEL_H_IN;
+    // One-cell dims; when rotated, swap so text runs along the long edge.
+    const cellWIn = rotate ? LABEL_H_IN : LABEL_W_IN;
+    const cellHIn = rotate ? LABEL_W_IN : LABEL_H_IN;
+    const twoPanel = state.flag;
 
-    const wPx = Math.round(wIn * dpi);
-    const hPx = Math.round(hIn * dpi);
+    const wPx = Math.round(cellWIn * dpi);
+    const cellPx = Math.round(cellHIn * dpi);   // one cell height
+    const hPx = twoPanel ? cellPx * 2 : cellPx; // flag = two cells stacked
     canvas.width = wPx;
     canvas.height = hPx;
 
@@ -1062,10 +1066,8 @@
     const margin = 0.06 * dpi; // ~0.06in inner margin
     const padX = margin;
 
-    // Each text copy is drawn into a box: the whole label, or one flag half.
-    // The perforation splits the HEIGHT, so flag halves are top/bottom.
-    let boxW = wPx, boxH = hPx;
-    if (state.flag) boxH = hPx / 2;
+    // Each text copy fills one full cell (flag stacks two of them).
+    const boxW = wPx, boxH = cellPx;
 
     // Font size: auto-fit to the box, or the manual pt value.
     let fontPx;
@@ -1103,15 +1105,14 @@
     }
 
     if (state.flag) {
-      // Self-laminating wraparound flag ("∀ A" in Brady's app): the same text
-      // prints on both panels, split at the mid-height perforation. Top panel
-      // upright, bottom panel rotated 180° (matching the Brady layout) so both
-      // faces read upright once folded at the perforation.
-      drawBlock(0, 0, wPx, hPx / 2, false);       // top: upright reference
-      drawBlock(0, hPx / 2, wPx, hPx / 2, true);  // bottom: rotated 180°
-      if (!isPrint) drawFold(ctx, 0, hPx / 2, wPx, hPx / 2, 'h');
+      // Self-laminating wraparound flag ("∀ A" in Brady's app): two full cells
+      // stacked at the perforation. Top cell upright, bottom cell rotated 180°
+      // (matching the Brady layout) so both faces read upright once folded.
+      drawBlock(0, 0, wPx, cellPx, false);       // top cell: upright reference
+      drawBlock(0, cellPx, wPx, cellPx, true);   // bottom cell: rotated 180°
+      if (!isPrint) drawFold(ctx, 0, cellPx, wPx, cellPx, 'h');
     } else {
-      drawBlock(0, 0, wPx, hPx, false);
+      drawBlock(0, 0, wPx, cellPx, false);
     }
   }
 
@@ -1149,14 +1150,15 @@
 
   function renderPreview() {
     renderLabel(el.preview, SCREEN_DPI);
-    // Match the frame overlays / dims to orientation.
+    // Dimension callouts reflect the actual printed size: flag prints 2 cells.
     const rotate = state.rotate;
-    const wIn = rotate ? LABEL_H_IN : LABEL_W_IN;
-    const hIn = rotate ? LABEL_W_IN : LABEL_H_IN;
-    el.dimW.textContent = `${wIn.toFixed(3)} in`;
-    el.dimH.textContent = `${hIn.toFixed(3)} in`;
+    const cellWIn = rotate ? LABEL_H_IN : LABEL_W_IN;
+    const cellHIn = rotate ? LABEL_W_IN : LABEL_H_IN;
+    const panels = state.flag ? 2 : 1;
+    el.dimW.textContent = `${cellWIn.toFixed(3)} in`;
+    el.dimH.textContent = `${(cellHIn * panels).toFixed(3)} in` + (panels === 2 ? ' (2 panels)' : '');
     el.metaScreenPx.textContent = `${el.preview.width} × ${el.preview.height} px @ ${SCREEN_DPI}dpi`;
-    el.metaStock.textContent = `${LABEL_W_IN.toFixed(3)} × ${LABEL_H_IN.toFixed(3)} in`;
+    el.metaStock.textContent = `${LABEL_W_IN.toFixed(3)} × ${LABEL_H_IN.toFixed(3)} in/cell`;
     el.dpiTag.textContent = `${SCREEN_DPI} DPI`;
   }
 
@@ -1769,18 +1771,18 @@
   // of the folded flag shows its end. Independent of the designer's settings.
   function renderPortLabel(canvas, dpi, portA, portB) {
     const wPx = Math.round(LABEL_W_IN * dpi);
-    const hPx = Math.round(LABEL_H_IN * dpi);
+    const cellPx = Math.round(LABEL_H_IN * dpi); // one cell
+    const hPx = cellPx * 2;                       // two cells, spanning the perforation
     canvas.width = wPx; canvas.height = hPx;
     const ctx = canvas.getContext('2d');
     const isPrint = canvas === el.printCanvas;
     ctx.fillStyle = isPrint ? '#ffffff' : '#f4f1e8';
     ctx.fillRect(0, 0, wPx, hPx);
     const margin = 0.06 * dpi;
-    // Perforation splits the height (Brady "B A" flag): Port A on the top panel
-    // (upright), Port B on the bottom panel (rotated 180° so it reads upright
-    // once folded). Matches the Brady app's panel order.
-    drawFittedText(ctx, portA, 0, 0, wPx, hPx / 2, margin, false);
-    drawFittedText(ctx, portB, 0, hPx / 2, wPx, hPx / 2, margin, true);
+    // Brady "B A" flag: Port A on the top cell (upright), Port B on the bottom
+    // cell (rotated 180° so it reads upright once folded at the perforation).
+    drawFittedText(ctx, portA, 0, 0, wPx, cellPx, margin, false);
+    drawFittedText(ctx, portB, 0, cellPx, wPx, cellPx, margin, true);
   }
 
   // Auto-fit and draw text centered in a box, optionally rotated 180°.

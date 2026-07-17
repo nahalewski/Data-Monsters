@@ -687,20 +687,20 @@
         <div class="row" style="margin-bottom:12px;">
           <label class="field" style="margin-bottom:0;">
             <span class="lbl">Width (in)</span>
-            <input type="number" id="labelW" value="1.575" min="0.2" max="12" step="0.001" />
+            <input type="number" id="labelW" value="1.18" min="0.2" max="12" step="0.001" />
           </label>
           <label class="field" style="margin-bottom:0;">
             <span class="lbl">Height (in)</span>
-            <input type="number" id="labelH" value="1.181" min="0.2" max="12" step="0.001" />
+            <input type="number" id="labelH" value="3.16" min="0.2" max="12" step="0.001" />
           </label>
         </div>
         <div class="seg" id="sizePreset" style="margin-bottom:10px;">
-          <button data-w="1.575" data-h="1.181">1.58 × 1.18 (landscape)</button>
-          <button data-w="1.181" data-h="1.575">1.18 × 1.58 (portrait)</button>
+          <button data-w="1.18" data-h="3.16">1.18 × 3.16 (full, 2 panels)</button>
+          <button data-w="1.18" data-h="1.58">1.18 × 1.58 (one panel)</button>
         </div>
         <button id="btnUseSupply" class="btn" disabled>⤓ Use printer's label size</button>
         <div class="import-info" style="margin-top:10px;">
-          M5-01-425-FT is 1.58 × 1.18 in (40 × 30 mm). Connect the printer and tap “Use printer's label size” to match the loaded cartridge exactly, or edit the fields. The preview is true-scale — match it before printing.
+          M5-01-425-FT is 1.18 × 3.16 in — a perforation splits the height into two 1.18 × 1.58 panels that fold into a flag. Flag / Port A·B printing splits at that perforation. The preview is true-scale — match it before printing.
         </div>
       </div>
     </div>
@@ -718,14 +718,14 @@
       <div class="panel-body">
         <div class="drawing">
           <div class="label-frame" id="labelFrame">
-            <div class="dim dim-w" id="dimW">1.575 in</div>
-            <div class="dim dim-h" id="dimH">1.181 in</div>
+            <div class="dim dim-w" id="dimW">1.18 in</div>
+            <div class="dim dim-h" id="dimH">3.16 in</div>
             <canvas id="preview"></canvas>
             <div class="part-tag">BRADY M5-01-425-FT · DIE-CUT</div>
           </div>
         </div>
         <div class="stage-meta" style="margin-top:16px;">
-          <span><b>Stock:</b> <span id="metaStock">1.575 × 1.181 in</span></span>
+          <span><b>Stock:</b> <span id="metaStock">1.18 × 3.16 in</span></span>
           <span><b>Screen:</b> <span id="metaScreenPx">—</span></span>
           <span><b>Print target:</b> <span id="metaPrintDpi">300 DPI</span></span>
         </div>
@@ -801,8 +801,11 @@
 
 <script type="module">
   // ---- Label spec (Brady M5-01-425-FT default; adjustable in the UI) ----
-  let LABEL_W_IN = 1.575;
-  let LABEL_H_IN = 1.181;
+  // Full die-cut sticker: 1.18 in wide × 3.16 in tall, with a perforation at
+  // the middle of the height (1.58 in) splitting it into two 1.18 × 1.58 panels
+  // that fold together into a flag.
+  let LABEL_W_IN = 1.18;
+  let LABEL_H_IN = 3.16;
   const SCREEN_DPI = 150;          // on-screen true-scale render
   const PRINT_DPI_FALLBACK = 300;  // used if SDK doesn't report DPI
 
@@ -1060,11 +1063,9 @@
     const padX = margin;
 
     // Each text copy is drawn into a box: the whole label, or one flag half.
+    // The perforation splits the HEIGHT, so flag halves are top/bottom.
     let boxW = wPx, boxH = hPx;
-    if (state.flag) {
-      if (wPx >= hPx) { boxH = hPx / 2; }   // stacked halves
-      else { boxW = wPx / 2; }              // side-by-side halves
-    }
+    if (state.flag) boxH = hPx / 2;
 
     // Font size: auto-fit to the box, or the manual pt value.
     let fontPx;
@@ -1102,24 +1103,15 @@
     }
 
     if (state.flag) {
-      // Self-laminating wraparound flag: the same text prints on both halves so
-      // it reads identically on each face once the label is folded down the
-      // middle. Split across the SHORTER axis so each copy keeps the full long
-      // edge for the text. For a horizontal fold the two faces end up
-      // back-to-back and a fold about a horizontal axis inverts the text, so the
-      // far (top) copy is pre-rotated 180° — after folding, both read upright.
-      if (wPx >= hPx) {
-        // Wider than tall: stack the copies top / bottom (horizontal fold).
-        drawBlock(0, hPx / 2, wPx, hPx / 2, false); // bottom: upright reference
-        drawBlock(0, 0, wPx, hPx / 2, true);        // top: rotated 180°
-        if (!isPrint) drawFold(ctx, 0, hPx / 2, wPx, hPx / 2, 'h');
-      } else {
-        // Taller than wide: copies side by side (vertical fold). A 180° fold
-        // about a vertical axis keeps text readable, so both stay upright.
-        drawBlock(0, 0, wPx / 2, hPx, false);
-        drawBlock(wPx / 2, 0, wPx / 2, hPx, false);
-        if (!isPrint) drawFold(ctx, wPx / 2, 0, wPx / 2, hPx, 'v');
-      }
+      // Self-laminating wraparound flag: the same text prints on both panels so
+      // it reads identically on each face once folded at the perforation. The
+      // perforation splits the height, so the two panels are stacked top/bottom
+      // and the fold is about that horizontal line. A fold about a horizontal
+      // axis inverts the text, so the far (top) copy is pre-rotated 180° — after
+      // folding, both read upright.
+      drawBlock(0, hPx / 2, wPx, hPx / 2, false); // bottom: upright reference
+      drawBlock(0, 0, wPx, hPx / 2, true);        // top: rotated 180°
+      if (!isPrint) drawFold(ctx, 0, hPx / 2, wPx, hPx / 2, 'h');
     } else {
       drawBlock(0, 0, wPx, hPx, false);
     }
@@ -1786,15 +1778,10 @@
     ctx.fillStyle = isPrint ? '#ffffff' : '#f4f1e8';
     ctx.fillRect(0, 0, wPx, hPx);
     const margin = 0.06 * dpi;
-    if (wPx >= hPx) {
-      // Stacked halves (horizontal fold): bottom upright, top rotated 180°.
-      drawFittedText(ctx, portA, 0, hPx / 2, wPx, hPx / 2, margin, false);
-      drawFittedText(ctx, portB, 0, 0, wPx, hPx / 2, margin, true);
-    } else {
-      // Side-by-side halves (vertical fold): both upright.
-      drawFittedText(ctx, portA, 0, 0, wPx / 2, hPx, margin, false);
-      drawFittedText(ctx, portB, wPx / 2, 0, wPx / 2, hPx, margin, false);
-    }
+    // Perforation splits the height: Port A on the bottom panel (upright),
+    // Port B on the top panel (rotated 180° so it reads upright once folded).
+    drawFittedText(ctx, portA, 0, hPx / 2, wPx, hPx / 2, margin, false);
+    drawFittedText(ctx, portB, 0, 0, wPx, hPx / 2, margin, true);
   }
 
   // Auto-fit and draw text centered in a box, optionally rotated 180°.

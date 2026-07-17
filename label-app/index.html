@@ -600,6 +600,29 @@
       </div>
     </div>
 
+    <div class="panel">
+      <div class="panel-head"><h2>Label Size</h2><span class="idx">DIM</span></div>
+      <div class="panel-body">
+        <div class="row" style="margin-bottom:12px;">
+          <label class="field" style="margin-bottom:0;">
+            <span class="lbl">Width (in)</span>
+            <input type="number" id="labelW" value="1.575" min="0.2" max="12" step="0.001" />
+          </label>
+          <label class="field" style="margin-bottom:0;">
+            <span class="lbl">Height (in)</span>
+            <input type="number" id="labelH" value="1.181" min="0.2" max="12" step="0.001" />
+          </label>
+        </div>
+        <div class="seg" id="sizePreset">
+          <button data-w="1.575" data-h="1.181">1.58 × 1.18 (landscape)</button>
+          <button data-w="1.181" data-h="1.575">1.18 × 1.58 (portrait)</button>
+        </div>
+        <div class="import-info" style="margin-top:10px;">
+          M5-01-425-FT is 1.58 × 1.18 in (40 × 30 mm). Adjust only if your printable area differs. The preview is true-scale — match it before printing.
+        </div>
+      </div>
+    </div>
+
   </section>
 
   <!-- RIGHT: STAGE -->
@@ -620,7 +643,7 @@
           </div>
         </div>
         <div class="stage-meta" style="margin-top:16px;">
-          <span><b>Stock:</b> 1.575 × 1.181 in</span>
+          <span><b>Stock:</b> <span id="metaStock">1.575 × 1.181 in</span></span>
           <span><b>Screen:</b> <span id="metaScreenPx">—</span></span>
           <span><b>Print target:</b> <span id="metaPrintDpi">300 DPI</span></span>
         </div>
@@ -649,9 +672,9 @@
 </script>
 
 <script type="module">
-  // ---- Label spec (Brady M5-01-425-FT) ----
-  const LABEL_W_IN = 1.575;
-  const LABEL_H_IN = 1.181;
+  // ---- Label spec (Brady M5-01-425-FT default; adjustable in the UI) ----
+  let LABEL_W_IN = 1.575;
+  let LABEL_H_IN = 1.181;
   const SCREEN_DPI = 150;          // on-screen true-scale render
   const PRINT_DPI_FALLBACK = 300;  // used if SDK doesn't report DPI
 
@@ -669,6 +692,7 @@
     copies: $('copies'), cutOption: $('cutOption'),
     alignSeg: $('alignSeg'), boldToggle: $('boldToggle'), rotateToggle: $('rotateToggle'),
     flagToggle: $('flagToggle'), fontFamily: $('fontFamily'), autoFitToggle: $('autoFitToggle'),
+    labelW: $('labelW'), labelH: $('labelH'), sizePreset: $('sizePreset'), metaStock: $('metaStock'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -1001,6 +1025,7 @@
     el.dimW.textContent = `${wIn.toFixed(3)} in`;
     el.dimH.textContent = `${hIn.toFixed(3)} in`;
     el.metaScreenPx.textContent = `${el.preview.width} × ${el.preview.height} px @ ${SCREEN_DPI}dpi`;
+    el.metaStock.textContent = `${LABEL_W_IN.toFixed(3)} × ${LABEL_H_IN.toFixed(3)} in`;
     el.dpiTag.textContent = `${SCREEN_DPI} DPI`;
   }
 
@@ -1013,6 +1038,26 @@
   el.fontFamily.addEventListener('change', () => {
     state.font = el.fontFamily.value;
     renderPreview();
+  });
+
+  // Label dimensions are user-adjustable so the app matches the real stock.
+  function applyLabelSize() {
+    const w = parseFloat(el.labelW.value);
+    const h = parseFloat(el.labelH.value);
+    if (w > 0) LABEL_W_IN = w;
+    if (h > 0) LABEL_H_IN = h;
+    renderPreview();
+  }
+  [el.labelW, el.labelH].forEach(n => {
+    n.addEventListener('input', applyLabelSize);
+    n.addEventListener('change', applyLabelSize);
+  });
+  el.sizePreset.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.labelW.value = btn.dataset.w;
+      el.labelH.value = btn.dataset.h;
+      applyLabelSize();
+    });
   });
 
   el.alignSeg.querySelectorAll('button').forEach(btn => {

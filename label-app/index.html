@@ -613,12 +613,13 @@
             <input type="number" id="labelH" value="1.181" min="0.2" max="12" step="0.001" />
           </label>
         </div>
-        <div class="seg" id="sizePreset">
+        <div class="seg" id="sizePreset" style="margin-bottom:10px;">
           <button data-w="1.575" data-h="1.181">1.58 × 1.18 (landscape)</button>
           <button data-w="1.181" data-h="1.575">1.18 × 1.58 (portrait)</button>
         </div>
+        <button id="btnUseSupply" class="btn" disabled>⤓ Use printer's label size</button>
         <div class="import-info" style="margin-top:10px;">
-          M5-01-425-FT is 1.58 × 1.18 in (40 × 30 mm). Adjust only if your printable area differs. The preview is true-scale — match it before printing.
+          M5-01-425-FT is 1.58 × 1.18 in (40 × 30 mm). Connect the printer and tap “Use printer's label size” to match the loaded cartridge exactly, or edit the fields. The preview is true-scale — match it before printing.
         </div>
       </div>
     </div>
@@ -693,6 +694,7 @@
     alignSeg: $('alignSeg'), boldToggle: $('boldToggle'), rotateToggle: $('rotateToggle'),
     flagToggle: $('flagToggle'), fontFamily: $('fontFamily'), autoFitToggle: $('autoFitToggle'),
     labelW: $('labelW'), labelH: $('labelH'), sizePreset: $('sizePreset'), metaStock: $('metaStock'),
+    btnUseSupply: $('btnUseSupply'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -845,6 +847,7 @@
     el.btnFeed.disabled = !state.connected;
     el.btnCut.disabled = !state.connected;
     el.btnPrintAll.disabled = !state.connected || records.length === 0;
+    el.btnUseSupply.disabled = !state.connected;
   }
 
   // ---- Telemetry ----
@@ -1058,6 +1061,53 @@
       el.labelH.value = btn.dataset.h;
       applyLabelSize();
     });
+  });
+
+  // Interpret one supply dimension as inches. Brady may report inches, mm, or
+  // dots depending on firmware, so infer from magnitude (and dpi for dots).
+  function toInches(v, dpi) {
+    const n = Number(v);
+    if (!isFinite(n) || n <= 0) return 0;
+    if (n < 12) return n;               // already inches (e.g. 1.18, 1.575)
+    if (n < 300) return n / 25.4;       // millimetres (e.g. 30, 40)
+    return n / (dpi || PRINT_DPI_FALLBACK); // dots
+  }
+
+  // Pull width/height out of whatever shape supplyDimensions returns.
+  function extractWH(dim) {
+    if (!dim) return null;
+    if (typeof dim === 'string') {
+      const m = dim.match(/([\d.]+)\s*[x×,]\s*([\d.]+)/i);
+      return m ? { w: +m[1], h: +m[2] } : null;
+    }
+    if (Array.isArray(dim) && dim.length >= 2) return { w: +dim[0], h: +dim[1] };
+    if (typeof dim === 'object') {
+      const w = dim.width ?? dim.w ?? dim.x ?? dim.labelWidth;
+      const h = dim.height ?? dim.h ?? dim.y ?? dim.labelHeight;
+      if (w != null && h != null) return { w: +w, h: +h };
+    }
+    return null;
+  }
+
+  el.btnUseSupply.addEventListener('click', () => {
+    if (!bradySdk) return;
+    const dim = safeGet(() => bradySdk.supplyDimensions, null);
+    const dpi = Number(safeGet(() => bradySdk.dotsPerInch, null)) || PRINT_DPI_FALLBACK;
+    const wh = extractWH(dim);
+    if (!wh) {
+      log(`Printer did not report usable label dimensions (${JSON.stringify(dim)}).`, 'warn');
+      return;
+    }
+    const wIn = toInches(wh.w, dpi);
+    const hIn = toInches(wh.h, dpi);
+    if (wIn <= 0 || hIn <= 0) {
+      log(`Could not interpret supply dimensions: ${JSON.stringify(dim)}.`, 'warn');
+      return;
+    }
+    el.labelW.value = wIn.toFixed(3);
+    el.labelH.value = hIn.toFixed(3);
+    applyLabelSize();
+    log(`Applied printer label size: ${wIn.toFixed(3)} × ${hIn.toFixed(3)} in (from ${JSON.stringify(dim)}).`, 'ok');
   });
 
   el.alignSeg.querySelectorAll('button').forEach(btn => {

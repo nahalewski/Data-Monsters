@@ -1,15 +1,11 @@
 services:
   - type: web
     name: brady-m511-labeler
-    runtime: static
-    buildCommand: ""
-    staticPublishPath: label-app
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
     pullRequestPreviewsEnabled: true
-    headers:
-      - path: /*
-        name: Permissions-Policy
-        value: bluetooth=(self)
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

@@ -870,6 +870,7 @@
       <button id="btnAddRow" class="linkbtn">+ row</button>
       <button id="btnAddCol" class="linkbtn">+ col</button>
       <button id="btnExportCsv" class="linkbtn">↓ export</button>
+      <button id="btnReport" class="linkbtn" title="Download the completed / not-completed / commented report">📊 report</button>
     </div>
   </div>
   <div class="tabpanes">
@@ -986,7 +987,7 @@
     scanInput: $('scanInput'), scanMode: $('scanMode'), scanTarget: $('scanTarget'),
     scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
     portACol: $('portACol'), portBCol: $('portBCol'), btnPrintSelected: $('btnPrintSelected'),
-    liveBadge: $('liveBadge'), liveText: $('liveText'),
+    liveBadge: $('liveBadge'), liveText: $('liveText'), btnReport: $('btnReport'),
     btnQuoteMode: $('btnQuoteMode'), quoteBar: $('quoteBar'), quoteCount: $('quoteCount'),
     btnQuoteInChat: $('btnQuoteInChat'), btnQuoteClear: $('btnQuoteClear'), chatBadge: $('chatBadge'),
     chatNameGate: $('chatNameGate'), chatFirst: $('chatFirst'), chatInitial: $('chatInitial'),
@@ -1815,43 +1816,52 @@
   // Import from the data tab reuses the same file picker as the top panel.
   el.btnImportData.addEventListener('click', () => el.fileInput.click());
 
-  async function exportCsv() {
-    if (!rawRows.length) { log('Nothing to export.', 'warn'); return; }
-    const csv = csvSerialize(rawRows);
-    const filename = 'labels.csv';
+  // Save text as a file: native share sheet on mobile, anchor download else.
+  async function saveTextFile(filename, text) {
     const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
       || (navigator.maxTouchPoints || 0) > 1;
-    // On mobile the native share sheet is the reliable way to save a file
-    // (the download attribute is often ignored there).
     if (isMobile && navigator.canShare) {
       try {
-        const file = new File([csv], filename, { type: 'text/csv' });
+        const file = new File([text], filename, { type: 'text/csv' });
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: filename });
-          log('Shared CSV.', 'ok');
+          log('Shared ' + filename + '.', 'ok');
           return;
         }
       } catch (e) {
         if (e && e.name === 'AbortError') return; // user cancelled the share
-        // otherwise fall through to the download path
       }
     }
-    // Anchor download (desktop + Android Chrome). Revoke on a delay — revoking
-    // synchronously right after click() can cancel the download.
     try {
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = filename; a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
       setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
-      log('Exported CSV — check your downloads.', 'ok');
+      log('Saved ' + filename + ' — check your downloads.', 'ok');
     } catch (e) {
-      log('Export failed: ' + (e.message || e), 'err');
+      log('Save failed: ' + (e.message || e), 'err');
     }
   }
+  function exportCsv() {
+    if (!rawRows.length) { log('Nothing to export.', 'warn'); return; }
+    saveTextFile('labels.csv', csvSerialize(rawRows));
+  }
   el.btnExportCsv.addEventListener('click', exportCsv);
+
+  // Weekly report: completed / not-completed / commented sections (built server-side).
+  el.btnReport.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/report.csv', { cache: 'no-store' });
+      if (!res.ok) throw new Error('server ' + res.status);
+      const csv = await res.text();
+      saveTextFile('m511-weekly-report.csv', csv);
+    } catch (e) {
+      log('Report unavailable (needs the live server): ' + (e.message || e), 'warn');
+    }
+  });
 
   // Tab switching for the bottom data bar.
   document.querySelectorAll('.databar .tab').forEach(tab => {
@@ -1921,6 +1931,14 @@
         (comments[key] = comments[key] || []).push(m.comment);
         updateCellBubble(m.r | 0, m.c | 0);
         if (commentTargetR === (m.r | 0) && commentTargetC === (m.c | 0)) renderCommentList();
+        return;
+      }
+      if (m.type === 'report') {
+        // A new week started — the previous week's report is ready; chat reset.
+        chatMessages = [];
+        renderChat();
+        log(`📊 Weekly report ready (week of ${m.forWeek}). Tap “📊 report” to download.`, 'ok');
+        el.btnReport.classList.add('on');
         return;
       }
       applyingRemote = true;
@@ -2106,6 +2124,8 @@
       ref: `${names[c] || 'C' + (c + 1)} · R${headerMode ? r : r + 1}`,
       value: (rawRows[r] && rawRows[r][c] != null) ? String(rawRows[r][c]) : '',
     }));
+    // Deselect after quoting so the selection doesn't linger.
+    quoteCells.clear(); renderDataTable(); updateQuoteBar();
     renderQuoteChip();
     switchTab('chat');
     if (identity) el.chatText.focus();

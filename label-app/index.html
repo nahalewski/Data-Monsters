@@ -318,7 +318,9 @@
     background: var(--panel); margin-bottom: -1px;
   }
   .databar-status { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
-  .table-statusrow { padding: 8px 14px 0; }
+  .table-statusrow { padding: 8px 14px 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .quote-checked-btn { color: var(--accent) !important; margin-left: auto; white-space: nowrap; }
+  .quote-checked-btn:hover { color: #fff !important; }
   /* Collapsible tool sections (scan / print) */
   .tool-details { border-bottom: 1px solid var(--line-soft); }
   .tool-details > summary {
@@ -459,6 +461,12 @@
   #page-csv .data-table td.rowdel { color: #b6bcc4; }
   #page-csv .data-table td.rowdel:hover { color: var(--danger); }
   #page-csv .data-table td.qsel { outline: 2px solid #2f7bff; background: rgba(47,123,255,.12); }
+  /* CSV toolbar actions (select / import / row / col / export / report) — white for legibility */
+  #page-csv .tabbar-actions .linkbtn { color: #ffffff; }
+  #page-csv .tabbar-actions .linkbtn:hover { color: var(--accent); }
+  #page-csv .tabbar-actions .linkbtn.on { color: var(--accent); }
+  #page-csv .tabbar .tab { color: #cdd4de; }
+  #page-csv .tabbar .tab:hover { color: #ffffff; }
 
   /* Toast notifications */
   .toast-wrap {
@@ -1060,7 +1068,10 @@
         <button id="btnQuoteInChat" class="btn printsel-btn" disabled>❝ Quote in chat</button>
         <button id="btnQuoteClear" class="linkbtn">clear</button>
       </div>
-      <div class="table-statusrow"><span class="databar-status" id="dataStatus">no data</span></div>
+      <div class="table-statusrow">
+        <span class="databar-status" id="dataStatus">no data</span>
+        <button id="btnQuoteChecked" class="linkbtn quote-checked-btn" style="display:none;">❝ quote checked rows in chat</button>
+      </div>
       <div class="data-table-wrap" id="dataTableWrap">
         <div class="data-empty" id="dataEmpty">No CSV loaded. Import a file above, or switch to <b>Raw</b> and type. <b>Long-press a cell</b> to leave a comment.</div>
         <table class="data-table" id="dataTable" style="display:none;"></table>
@@ -1178,6 +1189,7 @@
     scanInput: $('scanInput'), scanMode: $('scanMode'), scanTarget: $('scanTarget'),
     scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
     portACol: $('portACol'), portBCol: $('portBCol'), btnPrintSelected: $('btnPrintSelected'),
+    btnQuoteChecked: $('btnQuoteChecked'),
     liveBadge: $('liveBadge'), liveText: $('liveText'), btnReport: $('btnReport'),
     btnQuoteMode: $('btnQuoteMode'), quoteBar: $('quoteBar'), quoteCount: $('quoteCount'),
     btnQuoteInChat: $('btnQuoteInChat'), btnQuoteClear: $('btnQuoteClear'), chatBadge: $('chatBadge'),
@@ -1969,7 +1981,35 @@
     const n = [...selectedRows].filter(i => i < rawRows.length).length;
     el.btnPrintSelected.textContent = `▶▶ Print checked (${n})`;
     el.btnPrintSelected.disabled = !state.connected || n === 0;
+    // The left checkboxes double as a row picker for quoting whole rows in chat.
+    if (el.btnQuoteChecked) {
+      el.btnQuoteChecked.style.display = n ? '' : 'none';
+      el.btnQuoteChecked.textContent = `❝ quote ${n} checked row${n === 1 ? '' : 's'} in chat`;
+    }
   }
+
+  // Quote every checked row (all columns) into the chat composer.
+  function quoteCheckedRows() {
+    const rows = [...selectedRows].filter(i => i < rawRows.length).sort((a, b) => a - b);
+    if (!rows.length) return;
+    const headerMode = el.headerToggle.classList.contains('on');
+    const names = columnNames();
+    const cols = columnCount();
+    const q = [];
+    rows.forEach(r => {
+      for (let c = 0; c < cols; c++) {
+        const v = (rawRows[r] && rawRows[r][c] != null) ? String(rawRows[r][c]) : '';
+        if (v === '') continue; // skip empty cells to keep the quote compact
+        q.push({ ref: `${names[c] || 'C' + (c + 1)} · R${headerMode ? r : r + 1}`, value: v });
+      }
+    });
+    if (!q.length) return;
+    pendingQuote = q;
+    renderQuoteChip();
+    switchPage('chat');
+    if (identity) el.chatText.focus();
+  }
+  el.btnQuoteChecked.addEventListener('click', quoteCheckedRows);
 
   // Re-render the table (unless a cell is focused) and refresh the raw textarea
   // (unless it is focused). Keeps all three views consistent.

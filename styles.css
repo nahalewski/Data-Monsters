@@ -1,0 +1,290 @@
+:root {
+  --bg: #06090f;
+  --bg-soft: #0c121b;
+  --surface: #101927;
+  --surface-soft: #131f31;
+  --text: #ecf2f9;
+  --muted: #aeb8c8;
+  --accent: #58adf5;
+  --accent-soft: #8fd3ff;
+  --line: #223145;
+  --max-width: 1120px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  color: var(--text);
+  background: radial-gradient(900px 420px at 85% -80px, #1d3552 0%, var(--bg) 58%);
+  line-height: 1.6;
+}
+
+.container {
+  width: min(100% - 2rem, var(--max-width));
+  margin-inline: auto;
+}
+
+.hero {
+  border-bottom: 1px solid var(--line);
+}
+
+.nav {
+  padding: 1.35rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.brand-mark {
+  width: 2.9rem;
+  height: 1.9rem;
+}
+
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
+  fill: var(--accent-soft);
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+  letter-spacing: 0.05em;
+}
+
+.brand-copy strong {
+  font-size: 0.91rem;
+}
+
+.brand-copy small {
+  margin-top: 0.22rem;
+  font-size: 0.64rem;
+  color: var(--muted);
+}
+
+.nav-links {
+  display: flex;
+  gap: 0.95rem;
+}
+
+.nav-links a {
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.nav-links a:hover {
+  color: var(--text);
+}
+
+.hero-content {
+  padding: 2.8rem 0 3.6rem;
+  max-width: 780px;
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 0;
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: clamp(2rem, 4.8vw, 3.25rem);
+  margin-bottom: 1rem;
+}
+
+h2 {
+  font-size: clamp(1.55rem, 3.1vw, 2.15rem);
+}
+
+h3 {
+  font-size: 1.06rem;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 0.75rem;
+}
+
+.lead,
+.card p,
+.card li,
+.timeline-step p,
+.cta p,
+.trust-item p {
+  color: var(--muted);
+}
+
+.lead {
+  max-width: 70ch;
+  font-size: 1.05rem;
+}
+
+.hero-actions,
+.cta-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hero-actions {
+  margin-top: 1.3rem;
+}
+
+.button {
+  display: inline-block;
+  text-decoration: none;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #071220;
+  font-weight: 700;
+  border-radius: 0.58rem;
+  padding: 0.72rem 1rem;
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--text);
+}
+
+.section {
+  padding: 4rem 0;
+}
+
+.section-alt {
+  background: var(--bg-soft);
+  border-block: 1px solid var(--line);
+}
+
+.section-heading {
+  margin-bottom: 1.55rem;
+}
+
+.section-heading.narrow {
+  max-width: 760px;
+}
+
+.grid,
+.timeline,
+.trust {
+  display: grid;
+  gap: 1rem;
+}
+
+.grid.three {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.card,
+.trust-item,
+.timeline-step {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  padding: 1.2rem;
+}
+
+.emphasis {
+  border-color: #3d8fd4;
+  box-shadow: inset 0 0 0 1px rgba(143, 211, 255, 0.32);
+}
+
+.card ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.trust {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin-top: 2.4rem;
+}
+
+.trust-item {
+  background: var(--surface-soft);
+  text-align: center;
+  padding: 1rem;
+}
+
+.trust-number {
+  margin: 0;
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--accent-soft);
+}
+
+.timeline {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.timeline-step h3 {
+  margin-bottom: 0.6rem;
+}
+
+.cta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.footer {
+  padding: 1.2rem 0;
+}
+
+.footer-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.footer a {
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .nav {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .button,
+  .cta-actions {
+    width: 100%;
+  }
+
+  .button {
+    text-align: center;
+  }
+}

@@ -25,7 +25,9 @@ let chat = [];     // [ { name, text, ts, quote } ]  (capped, retained 5 days)
 let weekKey = null;   // ISO date of the current week's Monday
 let lastReport = null; // { forWeek, generatedAt }
 let pinnedReport = null; // { forWeek, generatedAt, completed, notDone, commented }
+let editLog = [];     // [ { name, text, ts } ]  attributed edit history
 const CHAT_MAX = 300;
+const EDIT_MAX = 250;
 const CHAT_TTL_MS = 5 * 24 * 60 * 60 * 1000; // keep chat ~5 days (the work week)
 
 // Monday (as YYYY-MM-DD) of the week containing d.
@@ -50,6 +52,7 @@ try {
     if (saved && saved.weekKey) weekKey = saved.weekKey;
     if (saved && saved.lastReport) lastReport = saved.lastReport;
     if (saved && saved.pinnedReport) pinnedReport = saved.pinnedReport;
+    if (saved && Array.isArray(saved.editLog)) editLog = saved.editLog.slice(-EDIT_MAX);
   }
 } catch (e) { console.error('load store failed:', e.message); }
 if (!weekKey) weekKey = weekKeyOf(new Date());
@@ -59,7 +62,7 @@ let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat, weekKey, lastReport, pinnedReport }),
+    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat, weekKey, lastReport, pinnedReport, editLog }),
       (e) => { if (e) console.error('persist failed:', e.message); });
   }, 500);
 }
@@ -174,7 +177,30 @@ function broadcast(obj, except) {
   const msg = JSON.stringify(obj);
   for (const c of wss.clients) if (c !== except && c.readyState === 1) c.send(msg);
 }
-function presence() { broadcast({ type: 'presence', count: wss.clients.size }); }
+// Presence groups connections by person (first name + last initial); a person
+// may have several devices open at once.
+function presence() {
+  const byName = new Map();
+  let devices = 0;
+  for (const c of wss.clients) {
+    if (c.readyState !== 1) continue;
+    devices++;
+    const nm = (c._id && c._id.name) || 'Guest';
+    byName.set(nm, (byName.get(nm) || 0) + 1);
+  }
+  const users = [...byName.entries()].map(([name, d]) => ({ name, devices: d }));
+  broadcast({ type: 'presence', people: users.length, devices, users });
+}
+
+// Attributed edit log (who changed what).
+function pushEdit(name, text) {
+  const entry = { name: clip(name, 40) || 'Someone', text: clip(text, 200), ts: Date.now() };
+  if (!entry.text) return;
+  editLog.push(entry);
+  if (editLog.length > EDIT_MAX) editLog = editLog.slice(-EDIT_MAX);
+  broadcast({ type: 'edit', entry }); // to everyone (incl. author, for their log)
+  persist();
+}
 
 function normRows(rows) {
   if (!Array.isArray(rows)) return [];
@@ -185,13 +211,16 @@ function clip(s, n) { return String(s == null ? '' : s).slice(0, n); }
 
 wss.on('connection', (ws) => {
   maybeRollWeek();
-  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, pinnedReport }));
+  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, pinnedReport, editLog }));
   presence();
 
   ws.on('message', (raw) => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
-    if (m.type === 'cell') {
+    if (m.type === 'hello') {
+      ws._id = { name: clip(m.name, 40) || 'Guest', deviceId: clip(m.deviceId, 40) };
+      presence();
+    } else if (m.type === 'cell') {
       const r = m.r | 0, c = m.c | 0;
       if (r < 0 || c < 0) return;
       while (doc.rows.length <= r) doc.rows.push([]);
@@ -199,11 +228,13 @@ wss.on('connection', (ws) => {
       doc.rows[r][c] = m.value == null ? '' : String(m.value);
       doc.rev++;
       broadcast({ type: 'cell', r, c, value: doc.rows[r][c], rev: doc.rev }, ws);
+      if (m.commit && m.name && m.detail) pushEdit(m.name, m.detail);
       persist();
     } else if (m.type === 'rows') {
       doc.rows = normRows(m.rows);
       doc.rev++;
       broadcast({ type: 'doc', rows: doc.rows, rev: doc.rev }, ws);
+      if (m.name && m.action) pushEdit(m.name, m.action);
       persist();
     } else if (m.type === 'comment') {
       const r = m.r | 0, c = m.c | 0;
@@ -213,6 +244,7 @@ wss.on('connection', (ws) => {
       if (!comment.text) return;
       (comments[key] = comments[key] || []).push(comment);
       broadcast({ type: 'comment', r, c, comment }, ws); // sender already added it locally
+      pushEdit(comment.name, `commented on R${r} C${c + 1}`);
       persist();
     } else if (m.type === 'chat') {
       const message = {

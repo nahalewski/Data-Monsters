@@ -447,9 +447,66 @@
   #page-csv .databar, #page-chat { border-top: none; }
   #page-csv .data-table-wrap { max-height: 68vh; }
 
+  /* Toast notifications */
+  .toast-wrap {
+    position: fixed; top: 14px; right: 14px; z-index: 200;
+    display: flex; flex-direction: column; gap: 8px; max-width: min(360px, 92vw);
+  }
+  .toast {
+    background: rgba(18,22,29,0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 4px;
+    padding: 9px 12px; font-size: 12.5px; color: var(--ink); box-shadow: 0 6px 20px rgba(0,0,0,.45);
+    opacity: 0; transform: translateX(16px); transition: opacity .25s, transform .25s; cursor: pointer;
+  }
+  .toast.in { opacity: 1; transform: none; }
+  .toast.edit { border-left-color: var(--accent-2); }
+  .toast .t-who { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  .toast.edit .t-who { color: var(--accent-2); }
+  .toast .t-body { margin-top: 2px; word-break: break-word; }
+
+  /* First-view name modal */
+  .name-modal {
+    position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center;
+    background: rgba(6,8,11,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); padding: 20px;
+  }
+  .name-modal-box {
+    width: 380px; max-width: 100%; background: var(--panel); border: 1px solid var(--accent);
+    border-radius: 6px; padding: 22px; box-shadow: 0 12px 44px rgba(0,0,0,.6);
+  }
+  .name-modal-box .nm-title { font-family: var(--mono); font-size: 16px; color: var(--accent); margin-bottom: 8px; }
+  .name-modal-box .nm-sub { font-size: 12.5px; color: var(--ink-dim); line-height: 1.55; margin: 0 0 14px; }
+  .nm-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .name-modal-box input {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 2px; color: var(--ink);
+    font-family: var(--sans); font-size: 16px; padding: 10px 11px; outline: none;
+  }
+  .name-modal-box #nmFirst { flex: 1; }
+  .name-modal-box #nmInitial { width: 64px; text-align: center; }
+  .name-modal-box input:focus { border-color: var(--accent); }
+  .name-modal-box .btn { width: 100%; }
+
+  /* Edit log */
+  .editlog { max-height: 180px; overflow-y: auto; padding: 4px 16px 10px; }
+  .editlog-item { font-size: 12px; padding: 3px 0; border-bottom: 1px dotted var(--line-soft); }
+  .editlog-item:last-child { border-bottom: none; }
+  .editlog-item .who { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+  .editlog-item .when { color: var(--ink-faint); font-size: 10px; margin-left: 6px; }
+  .editlog-item .what { color: var(--ink-dim); }
+  .editlog-empty { color: var(--ink-faint); font-family: var(--mono); font-size: 11px; padding: 4px 0; }
+
   /* Chat */
   .chat-wrap { display: flex; flex-direction: column; height: 320px; }
   .chat-page { height: calc(100vh - 175px); min-height: 320px; }
+  /* Glassy, semi-transparent chat surface */
+  #page-chat .chat-log {
+    background: rgba(18,22,29,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  #page-chat .chat-msg {
+    background: rgba(23,28,37,0.5); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 11px;
+    align-self: flex-start; max-width: 88%;
+  }
+  #page-chat .chat-msg.mine { align-self: flex-end; border-color: rgba(0,229,160,.3); background: rgba(0,229,160,.08); }
   .chat-name-gate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
   .chat-name-in { min-width: 120px; }
   .chat-log { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -936,6 +993,10 @@
           <button id="btnPrintSelected" class="btn printsel-btn" disabled>▶▶ Print checked (0)</button>
         </div>
       </details>
+      <details class="tool-details" id="editLogDetails">
+        <summary><span>🖉 Edit log</span><span class="scan-count" id="editLogCount">0</span></summary>
+        <div class="editlog" id="editLog"><div class="editlog-empty">No edits yet.</div></div>
+      </details>
       <div class="scanbar quotebar" id="quoteBar" style="display:none;">
         <span class="printbar-lbl">Select: tap a <b>row #</b>, a <b>header</b>, or <b>cells</b> to quote.</span>
         <span class="scan-count" id="quoteCount">0 selected</span>
@@ -982,6 +1043,22 @@
   <div class="comment-add">
     <input type="text" id="commentInput" class="scan-input" placeholder="Add a comment…" autocomplete="off" />
     <button id="btnAddComment" class="btn printsel-btn">Post</button>
+  </div>
+</div>
+
+<!-- Toast notifications -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- First-view name prompt (once per device) -->
+<div class="name-modal" id="nameModal" style="display:none;">
+  <div class="name-modal-box">
+    <div class="nm-title">👋 Welcome</div>
+    <p class="nm-sub">Set your name so your edits, comments and chat are attributed to you. It’s saved on this device. Use the same name on your other devices and they’ll be grouped together.</p>
+    <div class="nm-row">
+      <input type="text" id="nmFirst" maxlength="24" placeholder="First name" autocomplete="given-name" />
+      <input type="text" id="nmInitial" maxlength="1" placeholder="L" />
+    </div>
+    <button id="nmContinue" class="btn primary">Continue</button>
   </div>
 </div>
 
@@ -1037,6 +1114,9 @@
     commentPop: $('commentPop'), commentPopTitle: $('commentPopTitle'), commentPopClose: $('commentPopClose'),
     commentList: $('commentList'), commentInput: $('commentInput'), btnAddComment: $('btnAddComment'),
     chatPinned: $('chatPinned'),
+    toastWrap: $('toastWrap'), nameModal: $('nameModal'), nmFirst: $('nmFirst'),
+    nmInitial: $('nmInitial'), nmContinue: $('nmContinue'),
+    editLog: $('editLog'), editLogCount: $('editLogCount'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -1490,6 +1570,8 @@
   let comments = {};            // { "r,c": [ {name,text,ts} ] } shared cell comments
   let quoteMode = false;        // select-cells-to-quote mode
   let quoteCells = new Set();   // "r,c" keys selected for quoting
+  let dirtyCells = new Set();   // cells edited since focus (committed on blur)
+  let rawDirty = false;         // raw CSV changed since focus
 
   // Minimal RFC-4180-ish CSV parser (quotes, escaped quotes, embedded newlines).
   function parseCSV(text) {
@@ -1566,7 +1648,7 @@
     updateRecordNav();
     showRecord(recordIndex);
     refreshDataUI();
-    broadcastRows();
+    broadcastRows(`loaded ${records.length} row(s)`);
   }
 
   function setImportInfo(msg, cls) {
@@ -1642,7 +1724,7 @@
     setImportInfo('No list loaded — each row becomes one label.', '');
     updateRecordNav();
     refreshDataUI();
-    broadcastRows();
+    broadcastRows('cleared the list');
     log('Cleared imported list.', 'warn');
   });
 
@@ -1815,7 +1897,8 @@
     rawRows[r][c] = cell.textContent;
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);   // raw view isn't focused here
-    broadcastCell(r, c, rawRows[r][c]);
+    broadcastCell(r, c, rawRows[r][c]);        // live sync (no log)
+    dirtyCells.add(r + ',' + c);
   });
   // Keep cells single-line: Enter commits and blurs rather than inserting a break.
   el.dataTable.addEventListener('keydown', (e) => {
@@ -1832,7 +1915,7 @@
     renderDataTable();
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);
-    broadcastRows();
+    broadcastRows('deleted a row');
   });
 
   // Raw CSV editing → reparse into the grid + records live.
@@ -1840,11 +1923,14 @@
     rawRows = parseCSV(el.rawCsv.value);
     renderDataTable();
     recomputeRecords();
-    broadcastRows();
+    broadcastRows();   // live sync (no log)
+    rawDirty = true;
   });
-  // On blur, resync the textarea from rawRows so remote edits that arrived
-  // while it was focused become visible.
-  el.rawCsv.addEventListener('blur', () => { el.rawCsv.value = csvSerialize(rawRows); });
+  // On blur, resync the textarea and log the raw edit once (not per keystroke).
+  el.rawCsv.addEventListener('blur', () => {
+    el.rawCsv.value = csvSerialize(rawRows);
+    if (rawDirty) { broadcastRows('edited the raw CSV'); rawDirty = false; }
+  });
 
   el.btnAddRow.addEventListener('click', () => {
     const cols = rawRows.reduce((m, r) => Math.max(m, r.length), 1);
@@ -1852,7 +1938,7 @@
     renderDataTable();
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);
-    broadcastRows();
+    broadcastRows('added a row');
   });
 
   // Import from the data tab reuses the same file picker as the top panel.
@@ -1930,8 +2016,14 @@
   function wsSend(obj) {
     if (ws && wsReady && !applyingRemote) { try { ws.send(JSON.stringify(obj)); } catch (_) {} }
   }
-  function broadcastRows() { wsSend({ type: 'rows', rows: rawRows }); }
+  // Live sync (per keystroke) never logs; discrete actions pass an `action`
+  // and the server records one edit-log entry for it.
+  function broadcastRows(action) { wsSend({ type: 'rows', rows: rawRows, name: myName(), action: action || undefined }); }
   function broadcastCell(r, c, value) { wsSend({ type: 'cell', r, c, value }); }
+  // Commit: sent once when a cell edit finishes (on blur) → logs + toasts.
+  function broadcastCellCommit(r, c, value) {
+    wsSend({ type: 'cell', r, c, value, name: myName(), detail: editDetail(r, c, value), commit: true });
+  }
 
   function setLive(cls, text) {
     el.liveBadge.className = 'live-badge' + (cls ? ' ' + cls : '');
@@ -1964,20 +2056,29 @@
       url = `${proto}//${location.host}/ws`;
       ws = new WebSocket(url);
     } catch (_) { return; }
-    ws.onopen = () => { wsReady = true; setLive('on', 'live'); log('Live sync connected.', 'ok'); };
+    ws.onopen = () => { wsReady = true; setLive('on', 'live'); sendHello(); log('Live sync connected.', 'ok'); };
     ws.onclose = () => { wsReady = false; setLive('err', 'reconnecting…'); setTimeout(connectSync, 2500); };
     ws.onerror = () => { setLive('err', 'offline'); };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
       if (m.type === 'presence') {
-        const n = m.count || 1;
-        setLive('on', n <= 1 ? 'live · just you' : `live · ${n} here`);
+        const people = m.people || m.count || 1;
+        const devices = m.devices || people;
+        let label = people <= 1 ? 'live · just you' : `live · ${people} here`;
+        if (devices > people) label += ` (${devices} devices)`;
+        setLive('on', label);
+        if (Array.isArray(m.users)) el.liveBadge.title = 'Here now: ' + m.users.map(u => u.name + (u.devices > 1 ? ` ×${u.devices}` : '')).join(', ');
+        return;
+      }
+      if (m.type === 'edit') {
+        addEditEntry(m.entry, true);
         return;
       }
       if (m.type === 'chat') {
         chatMessages.push(m.message);
         if (chatMessages.length > 300) chatMessages = chatMessages.slice(-300);
         renderChat(); bumpChatUnread();
+        if (!identity || m.message.name !== identity.name) showToast(m.message.name, m.message.text || '(quoted cells)');
         return;
       }
       if (m.type === 'comment') {
@@ -2001,8 +2102,10 @@
         if (m.type === 'init') {
           comments = m.comments || {};
           chatMessages = Array.isArray(m.chat) ? m.chat : [];
+          editEntries = Array.isArray(m.editLog) ? m.editLog : [];
           renderChat();
           renderPinned(m.pinnedReport);
+          renderEditLog();
           if (cellIsFocused()) pendingDoc = m.rows; else applyRemoteRows(m.rows);
         } else if (m.type === 'doc') {
           if (cellIsFocused()) pendingDoc = m.rows;   // don't yank the row you're editing
@@ -2013,8 +2116,18 @@
       } finally { applyingRemote = false; }
     };
   }
-  // Apply a stashed remote doc once you finish editing a cell.
-  el.dataTable.addEventListener('focusout', () => {
+  // Commit a finished cell edit (log + toast others), and apply any stashed
+  // remote doc once you finish editing.
+  el.dataTable.addEventListener('focusout', (e) => {
+    const cell = e.target && e.target.closest && e.target.closest('.cell');
+    if (cell) {
+      const key = cell.dataset.r + ',' + cell.dataset.c;
+      if (dirtyCells.has(key)) {
+        const r = +cell.dataset.r, c = +cell.dataset.c;
+        broadcastCellCommit(r, c, (rawRows[r] && rawRows[r][c]) || '');
+        dirtyCells.delete(key);
+      }
+    }
     setTimeout(() => {
       if (pendingDoc && !cellIsFocused()) {
         applyingRemote = true; applyRemoteRows(pendingDoc); pendingDoc = null; applyingRemote = false;
@@ -2042,6 +2155,15 @@
   });
 
   // ---- Identity (first name + last initial, bound to this device) ----
+  // A stable per-device id lets the server group multiple devices that share
+  // the same name into one person.
+  function getDeviceId() {
+    let d = null;
+    try { d = localStorage.getItem('m511_device'); } catch (_) {}
+    if (!d) { d = 'd-' + Math.random().toString(36).slice(2) + Date.now().toString(36); try { localStorage.setItem('m511_device', d); } catch (_) {} }
+    return d;
+  }
+  const deviceId = getDeviceId();
   function getIdentity() {
     try { const o = JSON.parse(localStorage.getItem('m511_identity') || 'null'); if (o && o.name) return o; } catch (_) {}
     return null;
@@ -2050,28 +2172,92 @@
     const f = (first || '').trim();
     const i = (initial || '').trim().slice(0, 1).toUpperCase();
     if (!f) return null;
-    const o = { first: f, initial: i, name: i ? `${f} ${i}.` : f };
+    const o = { first: f, initial: i, name: i ? `${f} ${i}.` : f, deviceId };
     try { localStorage.setItem('m511_identity', JSON.stringify(o)); } catch (_) {}
     return o;
   }
+  function myName() { return identity ? identity.name : 'Guest'; }
   let identity = getIdentity();
+
+  // Tell the server who we are (name + device) so it can group devices.
+  function sendHello() { wsSend({ type: 'hello', name: myName(), deviceId }); }
+
+  // ---- Toast notifications ----
+  function showToast(who, body, kind) {
+    const t = document.createElement('div');
+    t.className = 'toast' + (kind ? ' ' + kind : '');
+    t.innerHTML = `<div class="t-who">${escapeHtml(who)}</div><div class="t-body">${escapeHtml(body)}</div>`;
+    el.toastWrap.appendChild(t);
+    while (el.toastWrap.children.length > 4) el.toastWrap.firstChild.remove();
+    requestAnimationFrame(() => t.classList.add('in'));
+    const kill = () => { t.classList.remove('in'); setTimeout(() => t.remove(), 260); };
+    t.addEventListener('click', kill);
+    setTimeout(kill, 4200);
+  }
+
+  // ---- Attributed edit log ----
+  let editEntries = [];
+  function renderEditLog() {
+    el.editLogCount.textContent = String(editEntries.length);
+    if (!editEntries.length) { el.editLog.innerHTML = `<div class="editlog-empty">No edits yet.</div>`; return; }
+    el.editLog.innerHTML = editEntries.slice(-80).reverse().map(e =>
+      `<div class="editlog-item"><span class="who">${escapeHtml(e.name)}</span><span class="when">${fmtTime(e.ts)}</span> <span class="what">${escapeHtml(e.text)}</span></div>`
+    ).join('');
+    el.editLog.scrollTop = 0;
+  }
+  function addEditEntry(entry, fromRemote) {
+    editEntries.push(entry);
+    if (editEntries.length > 250) editEntries = editEntries.slice(-250);
+    renderEditLog();
+    if (fromRemote && (!identity || entry.name !== identity.name)) {
+      showToast(entry.name, entry.text, 'edit');
+    }
+  }
+  // Human-readable description of a cell edit for the log.
+  function editDetail(r, c, value) {
+    const headerMode = el.headerToggle.classList.contains('on');
+    const col = columnNames()[c] || ('Col ' + (c + 1));
+    const rowNo = headerMode ? r : r + 1;
+    const v = (value == null || value === '') ? '(cleared)' : `“${String(value).slice(0, 40)}”`;
+    return `edited ${col} · R${rowNo} → ${v}`;
+  }
   function refreshIdentityUI() {
     const has = !!identity;
     el.chatNameGate.style.display = has ? 'none' : '';
     el.chatInputRow.style.display = has ? '' : 'none';
     if (has) el.chatMe.textContent = identity.name;
   }
+  // Commit a name from any input pair; refresh UI + re-announce to the server.
+  function commitIdentity(first, initial) {
+    const o = saveIdentity(first, initial);
+    if (!o) return false;
+    identity = o;
+    refreshIdentityUI(); renderChat();
+    sendHello(); // group this device under the (possibly new) name
+    log(`Name set: ${identity.name}`, 'ok');
+    return true;
+  }
   function requireName() {
     if (identity) return identity;
-    switchPage('chat'); el.chatFirst.focus();
+    showNameModal();
     return null;
   }
   el.btnSetName.addEventListener('click', () => {
-    const o = saveIdentity(el.chatFirst.value, el.chatInitial.value);
-    if (!o) { el.chatFirst.focus(); return; }
-    identity = o; refreshIdentityUI(); renderChat();
-    log(`Name set: ${identity.name}`, 'ok');
+    if (!commitIdentity(el.chatFirst.value, el.chatInitial.value)) el.chatFirst.focus();
   });
+
+  // First-view name prompt (shown once per device until a name is set).
+  function showNameModal() {
+    el.nameModal.style.display = 'flex';
+    setTimeout(() => el.nmFirst.focus(), 30);
+  }
+  function hideNameModal() { el.nameModal.style.display = 'none'; }
+  el.nmContinue.addEventListener('click', () => {
+    if (commitIdentity(el.nmFirst.value, el.nmInitial.value)) hideNameModal();
+    else el.nmFirst.focus();
+  });
+  el.nmInitial.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.nmContinue.click(); });
+  el.nmFirst.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.nmInitial.focus(); });
 
   // ---- Cell comments (long-press) ----
   function commentKey(r, c) { return r + ',' + c; }
@@ -2214,7 +2400,7 @@
       const q = (m.quote && m.quote.length)
         ? `<div class="chat-quote">` + m.quote.map(x => `<div><span class="qref">${escapeHtml(x.ref)}:</span> ${escapeHtml(x.value)}</div>`).join('') + `</div>`
         : '';
-      return `<div class="chat-msg"><span class="who${mine ? ' me' : ''}">${escapeHtml(m.name || 'Someone')}</span><span class="when">${fmtTime(m.ts)}</span>${q}${m.text ? `<div class="body">${escapeHtml(m.text)}</div>` : ''}</div>`;
+      return `<div class="chat-msg${mine ? ' mine' : ''}"><span class="who${mine ? ' me' : ''}">${escapeHtml(m.name || 'Someone')}</span><span class="when">${fmtTime(m.ts)}</span>${q}${m.text ? `<div class="body">${escapeHtml(m.text)}</div>` : ''}</div>`;
     }).join('');
     el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
@@ -2235,7 +2421,9 @@
   }
   el.btnSendChat.addEventListener('click', sendChat);
   el.chatText.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } });
-  refreshIdentityUI(); renderChat(); renderQuoteChip(); updateQuoteBar();
+  refreshIdentityUI(); renderChat(); renderQuoteChip(); updateQuoteBar(); renderEditLog();
+  // First-view prompt: ask for a name once per device.
+  if (!identity) showNameModal();
 
   // ---- Barcode scanning into the CSV ----
   // USB-C / USB scanners act as HID keyboards: they type the code then send
@@ -2288,7 +2476,7 @@
     }
 
     el.rawCsv.value = csvSerialize(rawRows);
-    broadcastRows();
+    broadcastRows(`scanned “${String(value).slice(0, 40)}”`);
     scanCount++;
     el.scanCount.textContent = `${scanCount} scan${scanCount === 1 ? '' : 's'}`;
     flashScan();
@@ -2312,7 +2500,7 @@
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);
     el.scanTarget.value = String(cols); // select the new column for scanning
-    broadcastRows();
+    broadcastRows(`added a column${name ? ' (' + name + ')' : ''}`);
   }
 
   // Scanners terminate with Enter (most) or Tab; treat both as end-of-scan.

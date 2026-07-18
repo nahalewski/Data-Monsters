@@ -318,6 +318,11 @@
     background: var(--panel); margin-bottom: -1px;
   }
   .databar-status { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-left: 12px; }
+  .live-badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-left: 12px; }
+  .live-badge .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); transition: background .2s, box-shadow .2s; }
+  .live-badge.on { color: var(--accent); }
+  .live-badge.on .live-dot { background: var(--accent); box-shadow: 0 0 7px 1px rgba(0,229,160,.7); }
+  .live-badge.err .live-dot { background: var(--accent-2); }
   .tabbar-actions { margin-left: auto; display: flex; gap: 16px; }
   .tabpane { display: none; }
   .tabpane.on { display: block; }
@@ -748,6 +753,7 @@
     <button class="tab on" data-tab="table">▦ CSV Table</button>
     <button class="tab" data-tab="raw">⟨/⟩ Raw CSV</button>
     <span class="databar-status" id="dataStatus">no data</span>
+    <span class="live-badge" id="liveBadge" title="Live collaboration status"><span class="live-dot"></span><span id="liveText">offline</span></span>
     <div class="tabbar-actions">
       <button id="btnImportData" class="linkbtn">↑ import</button>
       <button id="btnAddRow" class="linkbtn">+ row</button>
@@ -831,6 +837,7 @@
     scanInput: $('scanInput'), scanMode: $('scanMode'), scanTarget: $('scanTarget'),
     scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
     portACol: $('portACol'), portBCol: $('portBCol'), btnPrintSelected: $('btnPrintSelected'),
+    liveBadge: $('liveBadge'), liveText: $('liveText'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -1357,6 +1364,7 @@
     updateRecordNav();
     showRecord(recordIndex);
     refreshDataUI();
+    broadcastRows();
   }
 
   function setImportInfo(msg, cls) {
@@ -1432,6 +1440,7 @@
     setImportInfo('No list loaded — each row becomes one label.', '');
     updateRecordNav();
     refreshDataUI();
+    broadcastRows();
     log('Cleared imported list.', 'warn');
   });
 
@@ -1599,6 +1608,7 @@
     rawRows[r][c] = cell.textContent;
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);   // raw view isn't focused here
+    broadcastCell(r, c, rawRows[r][c]);
   });
   // Keep cells single-line: Enter commits and blurs rather than inserting a break.
   el.dataTable.addEventListener('keydown', (e) => {
@@ -1615,6 +1625,7 @@
     renderDataTable();
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);
+    broadcastRows();
   });
 
   // Raw CSV editing → reparse into the grid + records live.
@@ -1622,7 +1633,11 @@
     rawRows = parseCSV(el.rawCsv.value);
     renderDataTable();
     recomputeRecords();
+    broadcastRows();
   });
+  // On blur, resync the textarea from rawRows so remote edits that arrived
+  // while it was focused become visible.
+  el.rawCsv.addEventListener('blur', () => { el.rawCsv.value = csvSerialize(rawRows); });
 
   el.btnAddRow.addEventListener('click', () => {
     const cols = rawRows.reduce((m, r) => Math.max(m, r.length), 1);
@@ -1630,6 +1645,7 @@
     renderDataTable();
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);
+    broadcastRows();
   });
 
   // Import from the data tab reuses the same file picker as the top panel.
@@ -1683,6 +1699,78 @@
     });
   });
 
+  // ---- Live collaboration (WebSocket sync) ----
+  // Everyone on the site shares one CSV document, edited in real time. No login.
+  // Degrades gracefully to local-only if the sync server isn't reachable.
+  let ws = null, wsReady = false, applyingRemote = false, pendingDoc = null;
+
+  function wsSend(obj) {
+    if (ws && wsReady && !applyingRemote) { try { ws.send(JSON.stringify(obj)); } catch (_) {} }
+  }
+  function broadcastRows() { wsSend({ type: 'rows', rows: rawRows }); }
+  function broadcastCell(r, c, value) { wsSend({ type: 'cell', r, c, value }); }
+
+  function setLive(cls, text) {
+    el.liveBadge.className = 'live-badge' + (cls ? ' ' + cls : '');
+    if (text != null) el.liveText.textContent = text;
+  }
+  function cellIsFocused() {
+    const a = document.activeElement;
+    return !!(a && a.classList && a.classList.contains('cell'));
+  }
+  function applyRemoteRows(rows) {
+    rawRows = (Array.isArray(rows) ? rows : []).map(r => Array.isArray(r) ? r.slice() : []);
+    renderDataTable();
+    recomputeRecords();
+    if (document.activeElement !== el.rawCsv) el.rawCsv.value = csvSerialize(rawRows);
+  }
+  function applyRemoteCell(r, c, value) {
+    while (rawRows.length <= r) rawRows.push([]);
+    while (rawRows[r].length <= c) rawRows[r].push('');
+    rawRows[r][c] = value;
+    const cell = el.dataTable.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    if (cell && cell !== document.activeElement) cell.textContent = value;
+    else if (!cell) renderDataTable();
+    recomputeRecords();
+    if (document.activeElement !== el.rawCsv) el.rawCsv.value = csvSerialize(rawRows);
+  }
+  function connectSync() {
+    let url;
+    try {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      url = `${proto}//${location.host}/ws`;
+      ws = new WebSocket(url);
+    } catch (_) { return; }
+    ws.onopen = () => { wsReady = true; setLive('on', 'live'); log('Live sync connected.', 'ok'); };
+    ws.onclose = () => { wsReady = false; setLive('err', 'reconnecting…'); setTimeout(connectSync, 2500); };
+    ws.onerror = () => { setLive('err', 'offline'); };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+      if (m.type === 'presence') {
+        const n = m.count || 1;
+        setLive('on', n <= 1 ? 'live · just you' : `live · ${n} here`);
+        return;
+      }
+      applyingRemote = true;
+      try {
+        if (m.type === 'doc') {
+          if (cellIsFocused()) pendingDoc = m.rows;   // don't yank the row you're editing
+          else applyRemoteRows(m.rows);
+        } else if (m.type === 'cell') {
+          applyRemoteCell(m.r | 0, m.c | 0, m.value == null ? '' : String(m.value));
+        }
+      } finally { applyingRemote = false; }
+    };
+  }
+  // Apply a stashed remote doc once you finish editing a cell.
+  el.dataTable.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (pendingDoc && !cellIsFocused()) {
+        applyingRemote = true; applyRemoteRows(pendingDoc); pendingDoc = null; applyingRemote = false;
+      }
+    }, 0);
+  });
+
   // ---- Barcode scanning into the CSV ----
   // USB-C / USB scanners act as HID keyboards: they type the code then send
   // Enter (or Tab). We capture that in the scan box and route it into the grid.
@@ -1734,6 +1822,7 @@
     }
 
     el.rawCsv.value = csvSerialize(rawRows);
+    broadcastRows();
     scanCount++;
     el.scanCount.textContent = `${scanCount} scan${scanCount === 1 ? '' : 's'}`;
     flashScan();
@@ -1757,6 +1846,7 @@
     recomputeRecords();
     el.rawCsv.value = csvSerialize(rawRows);
     el.scanTarget.value = String(cols); // select the new column for scanning
+    broadcastRows();
   }
 
   // Scanners terminate with Enter (most) or Tab; treat both as end-of-scan.
@@ -2037,6 +2127,7 @@
   el.metaPrintDpi.textContent = `${PRINT_DPI_FALLBACK} DPI`;
   updateScanTargets();
   renderPreview();
+  connectSync(); // join the shared CSV document
   log('M511 Label Studio ready.');
   if (sdkOk) initSdk();
   else updateButtons();

@@ -5,3 +5,7 @@ Thumbs.db
 
 # Scratch / logs
 *.log
+
+# Node
+node_modules/
+shared-doc.json

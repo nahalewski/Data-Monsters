@@ -1,0 +1,10 @@
+{
+  "name": "brady-m511-labeler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "M511 Label Studio with live collaborative CSV sync",
+  "type": "commonjs",
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}

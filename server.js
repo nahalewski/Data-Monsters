@@ -21,29 +21,125 @@ const MIME = {
 // ---- Shared state: doc rows, per-cell comments, and chat ----
 let doc = { rows: [], rev: 0 };
 let comments = {}; // { "r,c": [ { name, text, ts } ] }
-let chat = [];     // [ { name, text, ts, quote } ]  (capped)
+let chat = [];     // [ { name, text, ts, quote } ]  (capped, retained 5 days)
+let weekKey = null;   // ISO date of the current week's Monday
+let lastReport = null; // { forWeek, generatedAt }
 const CHAT_MAX = 300;
+const CHAT_TTL_MS = 5 * 24 * 60 * 60 * 1000; // keep chat ~5 days (the work week)
+
+// Monday (as YYYY-MM-DD) of the week containing d.
+function weekKeyOf(d) {
+  const x = new Date(d);
+  const dow = (x.getDay() + 6) % 7; // 0 = Monday
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - dow);
+  return x.toISOString().slice(0, 10);
+}
+function pruneChat() {
+  const cutoff = Date.now() - CHAT_TTL_MS;
+  chat = chat.filter(m => (m.ts || 0) >= cutoff).slice(-CHAT_MAX);
+}
+
 try {
   if (fs.existsSync(STORE)) {
     const saved = JSON.parse(fs.readFileSync(STORE, 'utf8'));
     if (saved && Array.isArray(saved.rows)) doc = { rows: saved.rows, rev: saved.rev || 0 };
     if (saved && saved.comments && typeof saved.comments === 'object') comments = saved.comments;
     if (saved && Array.isArray(saved.chat)) chat = saved.chat.slice(-CHAT_MAX);
+    if (saved && saved.weekKey) weekKey = saved.weekKey;
+    if (saved && saved.lastReport) lastReport = saved.lastReport;
   }
 } catch (e) { console.error('load store failed:', e.message); }
+if (!weekKey) weekKey = weekKeyOf(new Date());
+pruneChat();
 
 let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat }),
+    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat, weekKey, lastReport }),
       (e) => { if (e) console.error('persist failed:', e.message); });
   }, 500);
+}
+
+// ---- Weekly report ----
+function csvCell(s) { s = String(s == null ? '' : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function csvRow(a) { return a.map(csvCell).join(','); }
+
+// One report CSV with three sections: completed (all cells filled), not
+// completed (any empty cell), and rows carrying comments.
+function buildReportCsv() {
+  const rows = doc.rows || [];
+  const now = new Date();
+  const out = [];
+  out.push(csvRow(['M511 Label Studio — Weekly Report']));
+  out.push(csvRow(['Generated', now.toISOString()]));
+  if (lastReport) out.push(csvRow(['For week beginning (Mon)', lastReport.forWeek]));
+  out.push('');
+  if (rows.length < 1) { out.push(csvRow(['(no data)'])); return out.join('\n'); }
+
+  const header = rows[0].map((h, c) => (String(h == null ? '' : h).trim() || ('Column ' + (c + 1))));
+  const nCols = header.length;
+  const completed = [], notDone = [], commented = [];
+  for (let i = 1; i < rows.length; i++) {
+    const ri = i; // index in doc.rows (matches the app's row # in header mode)
+    const cells = [];
+    for (let c = 0; c < nCols; c++) cells.push(String(rows[i][c] == null ? '' : rows[i][c]).trim());
+    const missing = [];
+    for (let c = 0; c < nCols; c++) if (cells[c] === '') missing.push(header[c]);
+    (missing.length === 0 ? completed : notDone).push({ ri, cells, missing });
+    const cmts = [];
+    for (let c = 0; c < nCols; c++) {
+      const arr = comments[ri + ',' + c];
+      if (arr) for (const cm of arr) cmts.push(`${header[c]} — ${cm.name}: ${cm.text}`);
+    }
+    if (cmts.length) commented.push({ ri, cells, cmts });
+  }
+
+  out.push(csvRow([`COMPLETED — all cells filled (${completed.length})`]));
+  out.push(csvRow(['Row', ...header]));
+  completed.forEach(x => out.push(csvRow([x.ri, ...x.cells])));
+  out.push('');
+  out.push(csvRow([`NOT COMPLETED — missing cells (${notDone.length})`]));
+  out.push(csvRow(['Row', ...header, 'Missing columns']));
+  notDone.forEach(x => out.push(csvRow([x.ri, ...x.cells, x.missing.join('; ')])));
+  out.push('');
+  out.push(csvRow([`ROWS WITH COMMENTS (${commented.length})`]));
+  out.push(csvRow(['Row', ...header, 'Comments']));
+  commented.forEach(x => out.push(csvRow([x.ri, ...x.cells, x.cmts.join(' | ')])));
+  return out.join('\n');
+}
+
+// On a new week (Monday), snapshot the report and reset the chat for the week.
+function maybeRollWeek() {
+  const nowKey = weekKeyOf(new Date());
+  if (nowKey !== weekKey) {
+    lastReport = { forWeek: weekKey, generatedAt: Date.now() };
+    weekKey = nowKey;
+    chat = []; // start the new work week with a clean chat
+    persist();
+    if (typeof broadcast === 'function') {
+      broadcast({ type: 'report', forWeek: lastReport.forWeek, generatedAt: lastReport.generatedAt });
+    }
+  } else {
+    pruneChat();
+  }
 }
 
 // ---- Static file serving ----
 const server = http.createServer((req, res) => {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  // Weekly report as a downloadable CSV (built live from the current sheet).
+  if (urlPath === '/report.csv') {
+    const csv = buildReportCsv();
+    res.writeHead(200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="m511-weekly-report.csv"',
+      'Cache-Control': 'no-cache',
+    });
+    res.end(csv);
+    return;
+  }
   if (urlPath === '/') urlPath = '/index.html';
   const filePath = path.join(ROOT, path.normalize(urlPath));
   if (!filePath.startsWith(ROOT)) { res.writeHead(403); res.end('Forbidden'); return; }
@@ -75,7 +171,8 @@ function normRows(rows) {
 function clip(s, n) { return String(s == null ? '' : s).slice(0, n); }
 
 wss.on('connection', (ws) => {
-  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat }));
+  maybeRollWeek();
+  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, lastReport }));
   presence();
 
   ws.on('message', (raw) => {
@@ -113,7 +210,7 @@ wss.on('connection', (ws) => {
       };
       if (!message.text && !(message.quote && message.quote.length)) return;
       chat.push(message);
-      if (chat.length > CHAT_MAX) chat = chat.slice(-CHAT_MAX);
+      pruneChat();
       broadcast({ type: 'chat', message }, ws); // sender already added it locally
       persist();
     }
@@ -122,5 +219,8 @@ wss.on('connection', (ws) => {
   ws.on('close', presence);
   ws.on('error', () => {});
 });
+
+maybeRollWeek();
+setInterval(maybeRollWeek, 60 * 60 * 1000); // hourly week-roll / chat prune check
 
 server.listen(PORT, () => console.log('M511 Label Studio (with live sync) on :' + PORT));

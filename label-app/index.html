@@ -317,7 +317,23 @@
     color: var(--accent); border-color: var(--line-soft); border-bottom-color: var(--panel);
     background: var(--panel); margin-bottom: -1px;
   }
-  .databar-status { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-left: 12px; }
+  .databar-status { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+  .table-statusrow { padding: 8px 14px 0; }
+  /* Collapsible tool sections (scan / print) */
+  .tool-details { border-bottom: 1px solid var(--line-soft); }
+  .tool-details > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 16px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-dim);
+  }
+  .tool-details > summary::-webkit-details-marker { display: none; }
+  .tool-details > summary::before {
+    content: "▸"; color: var(--accent); margin-right: 4px; transition: transform .15s; display: inline-block;
+  }
+  .tool-details[open] > summary::before { transform: rotate(90deg); }
+  .tool-details > summary:hover { color: var(--ink); }
+  .tool-details[open] > summary { color: var(--accent); }
+  .tool-details .scanbar { border-bottom: none; }
   .live-badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-left: 12px; }
   .live-badge .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); transition: background .2s, box-shadow .2s; }
   .live-badge.on { color: var(--accent); }
@@ -435,6 +451,35 @@
     border: 1px solid var(--line); border-radius: 3px; padding: 3px 7px; white-space: nowrap; cursor: pointer;
   }
   .chat-empty { color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px; }
+
+  /* ---- Mobile cleanup for the CSV viewer + chat ---- */
+  @media (max-width: 620px) {
+    .tabbar { flex-wrap: wrap; padding: 8px 10px 0; gap: 6px; }
+    .tabbar .tab { padding: 8px 11px; font-size: 12px; }
+    .live-badge { margin-left: auto; font-size: 10.5px; }
+    .databar-status { display: block; }
+    /* actions drop to their own full-width row, evenly spread */
+    .tabbar-actions { order: 3; width: 100%; margin: 2px 0 0; gap: 4px; justify-content: space-between; }
+    .tabbar-actions .linkbtn { font-size: 12px; padding: 6px 4px; text-decoration: none; }
+    .tabbar-actions .linkbtn.on { text-decoration: underline; }
+    .tool-details > summary { padding: 11px 12px; font-size: 12px; }
+    .scanbar { padding: 10px 12px; gap: 8px; }
+    .scan-input { min-width: 140px; font-size: 16px; }
+    .scan-lbl, .scan-sel { font-size: 12px; }
+    .printbar .printsel-btn, .quotebar .printsel-btn { width: 100%; }
+    .table-statusrow { padding: 8px 12px 0; }
+    .data-table-wrap { max-height: 46vh; }
+    .data-table td { padding: 8px 10px; }
+    /* chat fills the sheet and is thumb-friendly */
+    .chat-wrap { height: 62vh; }
+    .chat-name-gate { padding: 12px; gap: 8px; }
+    .chat-name-in { flex: 1; min-width: 0; font-size: 16px; }
+    .chat-name-gate .printbar-lbl { width: 100%; }
+    .chat-input-row { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .chat-input-row .scan-input { flex: 1 1 100%; order: 3; font-size: 16px; }
+    .chat-input-row .printsel-btn { order: 4; }
+    .comment-pop { width: 84vw; }
+  }
 
   .raw-csv {
     width: 100%; min-height: 220px; max-height: 320px; box-sizing: border-box;
@@ -815,10 +860,9 @@
 <!-- ============ BOTTOM: LIVE CSV DATA ============ -->
 <section class="databar" id="databar">
   <div class="tabbar">
-    <button class="tab on" data-tab="table">▦ CSV Table</button>
-    <button class="tab" data-tab="raw">⟨/⟩ Raw CSV</button>
+    <button class="tab on" data-tab="table">▦ Table</button>
+    <button class="tab" data-tab="raw">⟨/⟩ Raw</button>
     <button class="tab" data-tab="chat">💬 Chat<span class="tab-badge" id="chatBadge" style="display:none;">0</span></button>
-    <span class="databar-status" id="dataStatus">no data</span>
     <span class="live-badge" id="liveBadge" title="Live collaboration status"><span class="live-dot"></span><span id="liveText">offline</span></span>
     <div class="tabbar-actions">
       <button id="btnQuoteMode" class="linkbtn" title="Select cells/rows/columns to quote in chat">⌗ select</button>
@@ -828,36 +872,41 @@
       <button id="btnExportCsv" class="linkbtn">↓ export</button>
     </div>
   </div>
-  <div class="scanbar">
-    <span class="scan-ico" id="scanIco">▌▎▌▏▌▎</span>
-    <input type="text" id="scanInput" class="scan-input" autocomplete="off" autocapitalize="off"
-           spellcheck="false" placeholder="Click here and scan — a USB-C / USB barcode scanner types the serial + Enter into the field" />
-    <label class="scan-lbl">into
-      <select id="scanTarget" class="scan-sel" title="Column the scan fills"></select>
-    </label>
-    <select id="scanMode" class="scan-sel" title="Where each scan goes">
-      <option value="record">on selected record</option>
-      <option value="newrow">as a new row</option>
-      <option value="sequential">fill columns L→R</option>
-    </select>
-    <span class="scan-count" id="scanCount">0 scans</span>
-  </div>
-  <div class="scanbar printbar">
-    <span class="printbar-lbl">Print checked → each side of the label:</span>
-    <label class="scan-lbl">Port A <select id="portACol" class="scan-sel"></select></label>
-    <label class="scan-lbl">Port B <select id="portBCol" class="scan-sel"></select></label>
-    <button id="btnPrintSelected" class="btn printsel-btn" disabled>▶▶ Print checked (0)</button>
-  </div>
-  <div class="scanbar quotebar" id="quoteBar" style="display:none;">
-    <span class="printbar-lbl">Select mode: click a <b>row #</b>, a <b>column header</b>, or <b>cells</b> to quote.</span>
-    <span class="scan-count" id="quoteCount">0 selected</span>
-    <button id="btnQuoteInChat" class="btn printsel-btn" disabled>❝ Quote in chat</button>
-    <button id="btnQuoteClear" class="linkbtn">clear</button>
-  </div>
   <div class="tabpanes">
     <div class="tabpane on" id="pane-table">
+      <details class="tool-details" id="scanDetails">
+        <summary><span>⌨ Scan barcode into a field</span><span class="scan-count" id="scanCount">0 scans</span></summary>
+        <div class="scanbar">
+          <span class="scan-ico" id="scanIco">▌▎▌▏▌▎</span>
+          <input type="text" id="scanInput" class="scan-input" autocomplete="off" autocapitalize="off"
+                 spellcheck="false" placeholder="Tap here and scan — a USB scanner types the serial + Enter into the field" />
+          <label class="scan-lbl">into
+            <select id="scanTarget" class="scan-sel" title="Column the scan fills"></select>
+          </label>
+          <select id="scanMode" class="scan-sel" title="Where each scan goes">
+            <option value="record">on selected record</option>
+            <option value="newrow">as a new row</option>
+            <option value="sequential">fill columns L→R</option>
+          </select>
+        </div>
+      </details>
+      <details class="tool-details" id="printDetails">
+        <summary><span>▶▶ Print checked → Port A / Port B</span></summary>
+        <div class="scanbar printbar">
+          <label class="scan-lbl">Port A <select id="portACol" class="scan-sel"></select></label>
+          <label class="scan-lbl">Port B <select id="portBCol" class="scan-sel"></select></label>
+          <button id="btnPrintSelected" class="btn printsel-btn" disabled>▶▶ Print checked (0)</button>
+        </div>
+      </details>
+      <div class="scanbar quotebar" id="quoteBar" style="display:none;">
+        <span class="printbar-lbl">Select: tap a <b>row #</b>, a <b>header</b>, or <b>cells</b> to quote.</span>
+        <span class="scan-count" id="quoteCount">0 selected</span>
+        <button id="btnQuoteInChat" class="btn printsel-btn" disabled>❝ Quote in chat</button>
+        <button id="btnQuoteClear" class="linkbtn">clear</button>
+      </div>
+      <div class="table-statusrow"><span class="databar-status" id="dataStatus">no data</span></div>
       <div class="data-table-wrap" id="dataTableWrap">
-        <div class="data-empty" id="dataEmpty">No CSV loaded. Import a file in the panel above, or switch to <b>Raw CSV</b> and type. Edits here update the label preview live. <b>Long-press a cell</b> to leave a comment.</div>
+        <div class="data-empty" id="dataEmpty">No CSV loaded. Import a file above, or switch to <b>Raw</b> and type. <b>Long-press a cell</b> to leave a comment.</div>
         <table class="data-table" id="dataTable" style="display:none;"></table>
       </div>
     </div>
@@ -2459,6 +2508,12 @@
   el.metaPrintDpi.textContent = `${PRINT_DPI_FALLBACK} DPI`;
   updateScanTargets();
   renderPreview();
+  // Expand the scan/print tool sections on desktop; keep them collapsed on
+  // mobile so the table/chat are front-and-centre.
+  if (!window.matchMedia('(max-width: 620px)').matches) {
+    const sd = document.getElementById('scanDetails'), pd = document.getElementById('printDetails');
+    if (sd) sd.open = true; if (pd) pd.open = true;
+  }
   connectSync(); // join the shared CSV document
   log('M511 Label Studio ready.');
   if (sdkOk) initSdk();

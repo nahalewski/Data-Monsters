@@ -371,6 +371,71 @@
   .data-table tr.hrow td.chk { z-index: 2; }
   .data-table td.chk input { cursor: pointer; width: 15px; height: 15px; accent-color: var(--accent); }
 
+  /* Tab badge (unread chat) */
+  .tab-badge {
+    display: inline-block; margin-left: 6px; min-width: 16px; padding: 0 5px;
+    font-size: 10px; line-height: 16px; text-align: center; border-radius: 8px;
+    background: var(--accent); color: #04140e; font-weight: 700;
+  }
+  /* Cell comment bubble (pseudo-element so it never enters the cell text) */
+  .data-table td.cell { position: relative; }
+  .data-table td.cell[data-cmt]::after {
+    content: attr(data-cmt);
+    position: absolute; top: 1px; right: 1px; min-width: 15px; height: 15px;
+    padding: 0 3px; border-radius: 8px; background: var(--accent-2); color: #1a1200;
+    font-size: 9px; line-height: 15px; text-align: center; font-weight: 700;
+    box-shadow: 0 0 5px rgba(255,176,32,.6); pointer-events: none;
+  }
+  /* Quote selection highlight + select mode */
+  .data-table.selmode td.cell, .data-table.selmode td.rownum, .data-table.selmode tr.hrow td.cell { cursor: cell; }
+  .data-table td.qsel { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(0,229,160,.12); }
+  .quotebar .printbar-lbl b { color: var(--accent); }
+  .linkbtn.on { color: var(--accent); }
+
+  /* Comment popover */
+  .comment-pop {
+    position: absolute; z-index: 50; width: 280px; max-width: 92vw;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 5px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.6);
+  }
+  .comment-pop-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 10px; border-bottom: 1px solid var(--line-soft);
+    font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: .5px;
+  }
+  .comment-pop-x { background: none; border: none; color: var(--ink-dim); font-size: 16px; cursor: pointer; }
+  .comment-list { max-height: 200px; overflow-y: auto; padding: 8px 10px; }
+  .comment-item { margin-bottom: 8px; font-size: 12px; }
+  .comment-item .who { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+  .comment-item .when { color: var(--ink-faint); font-size: 10px; margin-left: 6px; }
+  .comment-item .body { color: var(--ink); margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
+  .comment-empty { color: var(--ink-faint); font-family: var(--mono); font-size: 11px; }
+  .comment-add { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line-soft); }
+
+  /* Chat */
+  .chat-wrap { display: flex; flex-direction: column; height: 320px; }
+  .chat-name-gate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
+  .chat-name-in { min-width: 120px; }
+  .chat-log { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .chat-msg { font-size: 12.5px; line-height: 1.45; }
+  .chat-msg .who { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  .chat-msg .who.me { color: var(--accent-2); }
+  .chat-msg .when { color: var(--ink-faint); font-size: 10px; margin-left: 6px; }
+  .chat-msg .body { color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+  .chat-quote {
+    border-left: 2px solid var(--accent); background: rgba(0,229,160,.06);
+    padding: 4px 8px; margin: 3px 0; border-radius: 0 3px 3px 0;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+  }
+  .chat-quote .qref { color: var(--accent); }
+  .chat-input-row { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+  .chat-me { font-family: var(--mono); font-size: 11px; color: var(--accent-2); white-space: nowrap; }
+  .chat-quote-chip {
+    font-family: var(--mono); font-size: 10.5px; color: var(--accent); background: rgba(0,229,160,.08);
+    border: 1px solid var(--line); border-radius: 3px; padding: 3px 7px; white-space: nowrap; cursor: pointer;
+  }
+  .chat-empty { color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px; }
+
   .raw-csv {
     width: 100%; min-height: 220px; max-height: 320px; box-sizing: border-box;
     border: none; background: #080a0d; color: var(--ink);
@@ -752,9 +817,11 @@
   <div class="tabbar">
     <button class="tab on" data-tab="table">▦ CSV Table</button>
     <button class="tab" data-tab="raw">⟨/⟩ Raw CSV</button>
+    <button class="tab" data-tab="chat">💬 Chat<span class="tab-badge" id="chatBadge" style="display:none;">0</span></button>
     <span class="databar-status" id="dataStatus">no data</span>
     <span class="live-badge" id="liveBadge" title="Live collaboration status"><span class="live-dot"></span><span id="liveText">offline</span></span>
     <div class="tabbar-actions">
+      <button id="btnQuoteMode" class="linkbtn" title="Select cells/rows/columns to quote in chat">⌗ select</button>
       <button id="btnImportData" class="linkbtn">↑ import</button>
       <button id="btnAddRow" class="linkbtn">+ row</button>
       <button id="btnAddCol" class="linkbtn">+ col</button>
@@ -781,18 +848,51 @@
     <label class="scan-lbl">Port B <select id="portBCol" class="scan-sel"></select></label>
     <button id="btnPrintSelected" class="btn printsel-btn" disabled>▶▶ Print checked (0)</button>
   </div>
+  <div class="scanbar quotebar" id="quoteBar" style="display:none;">
+    <span class="printbar-lbl">Select mode: click a <b>row #</b>, a <b>column header</b>, or <b>cells</b> to quote.</span>
+    <span class="scan-count" id="quoteCount">0 selected</span>
+    <button id="btnQuoteInChat" class="btn printsel-btn" disabled>❝ Quote in chat</button>
+    <button id="btnQuoteClear" class="linkbtn">clear</button>
+  </div>
   <div class="tabpanes">
     <div class="tabpane on" id="pane-table">
       <div class="data-table-wrap" id="dataTableWrap">
-        <div class="data-empty" id="dataEmpty">No CSV loaded. Import a file in the panel above, or switch to <b>Raw CSV</b> and type. Edits here update the label preview live.</div>
+        <div class="data-empty" id="dataEmpty">No CSV loaded. Import a file in the panel above, or switch to <b>Raw CSV</b> and type. Edits here update the label preview live. <b>Long-press a cell</b> to leave a comment.</div>
         <table class="data-table" id="dataTable" style="display:none;"></table>
       </div>
     </div>
     <div class="tabpane" id="pane-raw">
       <textarea id="rawCsv" class="raw-csv" spellcheck="false" placeholder="Paste or type CSV here — the table and label preview update as you type…"></textarea>
     </div>
+    <div class="tabpane" id="pane-chat">
+      <div class="chat-wrap">
+        <div class="chat-name-gate" id="chatNameGate">
+          <span class="printbar-lbl">Enter your name to chat (saved on this device):</span>
+          <input type="text" id="chatFirst" class="scan-sel chat-name-in" maxlength="24" placeholder="First name" />
+          <input type="text" id="chatInitial" class="scan-sel chat-name-in" maxlength="1" placeholder="L" style="width:52px;" />
+          <button id="btnSetName" class="btn printsel-btn">Set name</button>
+        </div>
+        <div class="chat-log" id="chatLog"></div>
+        <div class="chat-input-row" id="chatInputRow" style="display:none;">
+          <span class="chat-me" id="chatMe">—</span>
+          <div class="chat-quote-chip" id="chatQuoteChip" style="display:none;"></div>
+          <input type="text" id="chatText" class="scan-input" placeholder="Message…" autocomplete="off" />
+          <button id="btnSendChat" class="btn printsel-btn">Send</button>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
+
+<!-- Cell comment popover (positioned via JS) -->
+<div class="comment-pop" id="commentPop" style="display:none;">
+  <div class="comment-pop-head"><span id="commentPopTitle">Comments</span><button class="comment-pop-x" id="commentPopClose">×</button></div>
+  <div class="comment-list" id="commentList"></div>
+  <div class="comment-add">
+    <input type="text" id="commentInput" class="scan-input" placeholder="Add a comment…" autocomplete="off" />
+    <button id="btnAddComment" class="btn printsel-btn">Post</button>
+  </div>
+</div>
 
 <!-- offscreen canvas for high-DPI print raster -->
 <canvas id="printCanvas" style="display:none;"></canvas>
@@ -838,6 +938,13 @@
     scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
     portACol: $('portACol'), portBCol: $('portBCol'), btnPrintSelected: $('btnPrintSelected'),
     liveBadge: $('liveBadge'), liveText: $('liveText'),
+    btnQuoteMode: $('btnQuoteMode'), quoteBar: $('quoteBar'), quoteCount: $('quoteCount'),
+    btnQuoteInChat: $('btnQuoteInChat'), btnQuoteClear: $('btnQuoteClear'), chatBadge: $('chatBadge'),
+    chatNameGate: $('chatNameGate'), chatFirst: $('chatFirst'), chatInitial: $('chatInitial'),
+    btnSetName: $('btnSetName'), chatLog: $('chatLog'), chatInputRow: $('chatInputRow'),
+    chatMe: $('chatMe'), chatText: $('chatText'), btnSendChat: $('btnSendChat'), chatQuoteChip: $('chatQuoteChip'),
+    commentPop: $('commentPop'), commentPopTitle: $('commentPopTitle'), commentPopClose: $('commentPopClose'),
+    commentList: $('commentList'), commentInput: $('commentInput'), btnAddComment: $('btnAddComment'),
     fileInput: $('fileInput'), btnImport: $('btnImport'), headerToggle: $('headerToggle'),
     importInfo: $('importInfo'), recordNav: $('recordNav'), recordSelect: $('recordSelect'),
     recordCount: $('recordCount'), btnPrev: $('btnPrev'), btnNext: $('btnNext'),
@@ -1288,6 +1395,9 @@
   let rawRows = []; // last parsed array-of-arrays, kept so header toggle can re-slice.
   let selectedRows = new Set(); // rawRows indices checked for port printing
   let portsAutoSet = false;     // have we auto-detected Port A/B columns yet
+  let comments = {};            // { "r,c": [ {name,text,ts} ] } shared cell comments
+  let quoteMode = false;        // select-cells-to-quote mode
+  let quoteCells = new Set();   // "r,c" keys selected for quoting
 
   // Minimal RFC-4180-ish CSV parser (quotes, escaped quotes, embedded newlines).
   function parseCSV(text) {
@@ -1480,15 +1590,20 @@
       } else {
         html += `<td class="chk"><input type="checkbox" class="chkrow" data-r="${r}"${selectedRows.has(r) ? ' checked' : ''}></td>`;
       }
-      html += `<td class="rownum">${isHeader ? '' : (headerMode ? r : r + 1)}</td>`;
+      html += `<td class="rownum" data-rownum="${r}">${isHeader ? '' : (headerMode ? r : r + 1)}</td>`;
       for (let c = 0; c < maxCols; c++) {
         const val = row[c] == null ? '' : String(row[c]);
-        html += `<td class="cell" contenteditable="true" data-r="${r}" data-c="${c}">${escapeHtml(val)}</td>`;
+        const key = r + ',' + c;
+        const nCmt = (comments[key] && comments[key].length) || 0;
+        const cmtAttr = nCmt ? ` data-cmt="${nCmt}"` : '';
+        const sel = quoteCells.has(key) ? ' qsel' : '';
+        html += `<td class="cell${sel}" contenteditable="${quoteMode ? 'false' : 'true'}" data-r="${r}" data-c="${c}"${cmtAttr}>${escapeHtml(val)}</td>`;
       }
       html += `<td class="rowdel" data-del="${r}" title="delete row">×</td>`;
       html += '</tr>';
     });
     t.innerHTML = html;
+    t.classList.toggle('selmode', quoteMode);
     // Reflect "all selected" state on the header checkbox.
     const allChk = t.querySelector('.chkall');
     if (allChk) {
@@ -1691,12 +1806,7 @@
 
   // Tab switching for the bottom data bar.
   document.querySelectorAll('.databar .tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.databar .tab').forEach(t => t.classList.remove('on'));
-      document.querySelectorAll('.databar .tabpane').forEach(p => p.classList.remove('on'));
-      tab.classList.add('on');
-      document.getElementById('pane-' + tab.dataset.tab).classList.add('on');
-    });
+    tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
 
   // ---- Live collaboration (WebSocket sync) ----
@@ -1751,9 +1861,27 @@
         setLive('on', n <= 1 ? 'live · just you' : `live · ${n} here`);
         return;
       }
+      if (m.type === 'chat') {
+        chatMessages.push(m.message);
+        if (chatMessages.length > 300) chatMessages = chatMessages.slice(-300);
+        renderChat(); bumpChatUnread();
+        return;
+      }
+      if (m.type === 'comment') {
+        const key = (m.r | 0) + ',' + (m.c | 0);
+        (comments[key] = comments[key] || []).push(m.comment);
+        updateCellBubble(m.r | 0, m.c | 0);
+        if (commentTargetR === (m.r | 0) && commentTargetC === (m.c | 0)) renderCommentList();
+        return;
+      }
       applyingRemote = true;
       try {
-        if (m.type === 'doc') {
+        if (m.type === 'init') {
+          comments = m.comments || {};
+          chatMessages = Array.isArray(m.chat) ? m.chat : [];
+          renderChat();
+          if (cellIsFocused()) pendingDoc = m.rows; else applyRemoteRows(m.rows);
+        } else if (m.type === 'doc') {
           if (cellIsFocused()) pendingDoc = m.rows;   // don't yank the row you're editing
           else applyRemoteRows(m.rows);
         } else if (m.type === 'cell') {
@@ -1770,6 +1898,210 @@
       }
     }, 0);
   });
+
+  function fmtTime(ts) {
+    try { return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+    catch (_) { return ''; }
+  }
+  function switchTab(name) {
+    document.querySelectorAll('.databar .tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+    document.querySelectorAll('.databar .tabpane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + name));
+    if (name === 'chat') clearChatUnread();
+  }
+
+  // ---- Identity (first name + last initial, bound to this device) ----
+  function getIdentity() {
+    try { const o = JSON.parse(localStorage.getItem('m511_identity') || 'null'); if (o && o.name) return o; } catch (_) {}
+    return null;
+  }
+  function saveIdentity(first, initial) {
+    const f = (first || '').trim();
+    const i = (initial || '').trim().slice(0, 1).toUpperCase();
+    if (!f) return null;
+    const o = { first: f, initial: i, name: i ? `${f} ${i}.` : f };
+    try { localStorage.setItem('m511_identity', JSON.stringify(o)); } catch (_) {}
+    return o;
+  }
+  let identity = getIdentity();
+  function refreshIdentityUI() {
+    const has = !!identity;
+    el.chatNameGate.style.display = has ? 'none' : '';
+    el.chatInputRow.style.display = has ? '' : 'none';
+    if (has) el.chatMe.textContent = identity.name;
+  }
+  function requireName() {
+    if (identity) return identity;
+    switchTab('chat'); el.chatFirst.focus();
+    return null;
+  }
+  el.btnSetName.addEventListener('click', () => {
+    const o = saveIdentity(el.chatFirst.value, el.chatInitial.value);
+    if (!o) { el.chatFirst.focus(); return; }
+    identity = o; refreshIdentityUI(); renderChat();
+    log(`Name set: ${identity.name}`, 'ok');
+  });
+
+  // ---- Cell comments (long-press) ----
+  function commentKey(r, c) { return r + ',' + c; }
+  let commentTargetR = null, commentTargetC = null;
+  function updateCellBubble(r, c) {
+    const cell = el.dataTable.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    if (!cell) return;
+    const n = (comments[commentKey(r, c)] || []).length;
+    if (n) cell.setAttribute('data-cmt', String(n)); else cell.removeAttribute('data-cmt');
+  }
+  function renderCommentList() {
+    if (commentTargetR == null) return;
+    const list = comments[commentKey(commentTargetR, commentTargetC)] || [];
+    el.commentList.innerHTML = list.length
+      ? list.map(cm => `<div class="comment-item"><span class="who">${escapeHtml(cm.name || 'Someone')}</span><span class="when">${fmtTime(cm.ts)}</span><div class="body">${escapeHtml(cm.text)}</div></div>`).join('')
+      : `<div class="comment-empty">No comments yet.</div>`;
+    el.commentList.scrollTop = el.commentList.scrollHeight;
+  }
+  function openCommentPopover(r, c, anchorEl) {
+    commentTargetR = r; commentTargetC = c;
+    renderCommentList();
+    el.commentPopTitle.textContent = `Comment · R${r + 1} C${c + 1}`;
+    el.commentPop.style.display = '';
+    const rect = anchorEl.getBoundingClientRect();
+    const pop = el.commentPop;
+    const maxLeft = window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 10;
+    pop.style.top = (window.scrollY + rect.bottom + 6) + 'px';
+    pop.style.left = Math.max(8, Math.min(window.scrollX + rect.left, maxLeft)) + 'px';
+    el.commentInput.value = '';
+    el.commentInput.focus();
+  }
+  function closeCommentPopover() { el.commentPop.style.display = 'none'; commentTargetR = null; }
+  function addComment() {
+    const id = requireName(); if (!id) { closeCommentPopover(); return; }
+    const text = el.commentInput.value.trim();
+    if (!text || commentTargetR == null) return;
+    const r = commentTargetR, c = commentTargetC;
+    (comments[commentKey(r, c)] = comments[commentKey(r, c)] || []).push({ name: id.name, text, ts: Date.now() });
+    wsSend({ type: 'comment', r, c, name: id.name, text });
+    el.commentInput.value = ''; renderCommentList(); updateCellBubble(r, c);
+  }
+  el.btnAddComment.addEventListener('click', addComment);
+  el.commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addComment(); } });
+  el.commentPopClose.addEventListener('click', closeCommentPopover);
+  document.addEventListener('mousedown', (e) => {
+    if (el.commentPop.style.display !== 'none' && !el.commentPop.contains(e.target) && !(e.target.closest && e.target.closest('.cell'))) closeCommentPopover();
+  }, true);
+
+  // Long-press (touch/mouse) on a cell opens its comment popover.
+  let lpTimer = null, lpStart = null;
+  function cancelLongPress() { clearTimeout(lpTimer); lpTimer = null; }
+  el.dataTable.addEventListener('pointerdown', (e) => {
+    const cell = e.target.closest && e.target.closest('.cell');
+    if (!cell) return;
+    lpStart = { x: e.clientX, y: e.clientY };
+    lpTimer = setTimeout(() => { openCommentPopover(+cell.dataset.r, +cell.dataset.c, cell); lpTimer = null; }, 500);
+  });
+  el.dataTable.addEventListener('pointermove', (e) => {
+    if (lpTimer && lpStart && (Math.abs(e.clientX - lpStart.x) > 8 || Math.abs(e.clientY - lpStart.y) > 8)) cancelLongPress();
+  });
+  el.dataTable.addEventListener('pointerup', cancelLongPress);
+  el.dataTable.addEventListener('pointercancel', cancelLongPress);
+  el.dataTable.addEventListener('contextmenu', (e) => {
+    const cell = e.target.closest && e.target.closest('.cell');
+    if (cell) { e.preventDefault(); openCommentPopover(+cell.dataset.r, +cell.dataset.c, cell); }
+  });
+
+  // ---- Quote selection (rows / columns / cells) ----
+  function updateQuoteBar() {
+    el.quoteCount.textContent = `${quoteCells.size} selected`;
+    el.btnQuoteInChat.disabled = quoteCells.size === 0;
+  }
+  function setCellQuoted(r, c, on) {
+    const key = commentKey(r, c);
+    if (on) quoteCells.add(key); else quoteCells.delete(key);
+    const cell = el.dataTable.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    if (cell) cell.classList.toggle('qsel', on);
+  }
+  function toggleColumn(c) {
+    const rows = dataRowIndices();
+    const anyOff = rows.some(r => !quoteCells.has(commentKey(r, c)));
+    rows.forEach(r => setCellQuoted(r, c, anyOff));
+    updateQuoteBar();
+  }
+  function toggleRowQuote(r) {
+    const cols = columnCount();
+    const anyOff = Array.from({ length: cols }, (_, c) => c).some(c => !quoteCells.has(commentKey(r, c)));
+    for (let c = 0; c < cols; c++) setCellQuoted(r, c, anyOff);
+    updateQuoteBar();
+  }
+  el.btnQuoteMode.addEventListener('click', () => {
+    quoteMode = !quoteMode;
+    el.btnQuoteMode.classList.toggle('on', quoteMode);
+    el.quoteBar.style.display = quoteMode ? '' : 'none';
+    renderDataTable(); updateQuoteBar();
+  });
+  el.dataTable.addEventListener('click', (e) => {
+    if (!quoteMode) return;
+    const rn = e.target.closest && e.target.closest('.rownum');
+    if (rn && rn.dataset.rownum != null) { toggleRowQuote(+rn.dataset.rownum); return; }
+    const cell = e.target.closest && e.target.closest('.cell');
+    if (!cell) return;
+    const r = +cell.dataset.r, c = +cell.dataset.c;
+    const headerMode = el.headerToggle.classList.contains('on');
+    if (headerMode && r === 0) toggleColumn(c);
+    else { setCellQuoted(r, c, !quoteCells.has(commentKey(r, c))); updateQuoteBar(); }
+  });
+  el.btnQuoteClear.addEventListener('click', () => { quoteCells.clear(); renderDataTable(); updateQuoteBar(); });
+  el.btnQuoteInChat.addEventListener('click', () => {
+    if (!quoteCells.size) return;
+    const headerMode = el.headerToggle.classList.contains('on');
+    const names = columnNames();
+    const keys = [...quoteCells].map(k => k.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    pendingQuote = keys.map(([r, c]) => ({
+      ref: `${names[c] || 'C' + (c + 1)} · R${headerMode ? r : r + 1}`,
+      value: (rawRows[r] && rawRows[r][c] != null) ? String(rawRows[r][c]) : '',
+    }));
+    renderQuoteChip();
+    switchTab('chat');
+    if (identity) el.chatText.focus();
+  });
+
+  // ---- Chat ----
+  let chatMessages = [];
+  let pendingQuote = null;
+  let chatUnread = 0;
+  function renderQuoteChip() {
+    if (pendingQuote && pendingQuote.length) {
+      el.chatQuoteChip.style.display = '';
+      el.chatQuoteChip.textContent = `❝ ${pendingQuote.length} cell${pendingQuote.length === 1 ? '' : 's'} ✕`;
+    } else el.chatQuoteChip.style.display = 'none';
+  }
+  el.chatQuoteChip.addEventListener('click', () => { pendingQuote = null; renderQuoteChip(); });
+  function renderChat() {
+    if (!chatMessages.length) { el.chatLog.innerHTML = `<div class="chat-empty">No messages yet. Say hi 👋</div>`; return; }
+    el.chatLog.innerHTML = chatMessages.map(m => {
+      const mine = identity && m.name === identity.name;
+      const q = (m.quote && m.quote.length)
+        ? `<div class="chat-quote">` + m.quote.map(x => `<div><span class="qref">${escapeHtml(x.ref)}:</span> ${escapeHtml(x.value)}</div>`).join('') + `</div>`
+        : '';
+      return `<div class="chat-msg"><span class="who${mine ? ' me' : ''}">${escapeHtml(m.name || 'Someone')}</span><span class="when">${fmtTime(m.ts)}</span>${q}${m.text ? `<div class="body">${escapeHtml(m.text)}</div>` : ''}</div>`;
+    }).join('');
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  }
+  function bumpChatUnread() {
+    if (document.getElementById('pane-chat').classList.contains('on')) return;
+    chatUnread++; el.chatBadge.textContent = String(chatUnread); el.chatBadge.style.display = '';
+  }
+  function clearChatUnread() { chatUnread = 0; el.chatBadge.style.display = 'none'; }
+  function sendChat() {
+    const id = requireName(); if (!id) return;
+    const text = el.chatText.value.trim();
+    if (!text && !(pendingQuote && pendingQuote.length)) return;
+    chatMessages.push({ name: id.name, text, ts: Date.now(), quote: pendingQuote || null });
+    if (chatMessages.length > 300) chatMessages = chatMessages.slice(-300);
+    renderChat();
+    wsSend({ type: 'chat', name: id.name, text, quote: pendingQuote || null });
+    el.chatText.value = ''; pendingQuote = null; renderQuoteChip();
+  }
+  el.btnSendChat.addEventListener('click', sendChat);
+  el.chatText.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } });
+  refreshIdentityUI(); renderChat(); renderQuoteChip(); updateQuoteBar();
 
   // ---- Barcode scanning into the CSV ----
   // USB-C / USB scanners act as HID keyboards: they type the code then send

@@ -209,7 +209,10 @@ function normRows(rows) {
 
 function clip(s, n) { return String(s == null ? '' : s).slice(0, n); }
 
+let eidSeq = 0;
 wss.on('connection', (ws) => {
+  ws._eid = 'e' + (++eidSeq);
+  ws._editing = new Set();
   maybeRollWeek();
   ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, pinnedReport, editLog }));
   presence();
@@ -248,20 +251,43 @@ wss.on('connection', (ws) => {
       persist();
     } else if (m.type === 'chat') {
       const message = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         name: clip(m.name, 40), text: clip(m.text, 1000), ts: Date.now(),
         quote: Array.isArray(m.quote) ? m.quote.slice(0, 60).map(q => ({
           ref: clip(q.ref, 24), value: clip(q.value, 200),
         })) : null,
+        replyTo: (m.replyTo && typeof m.replyTo === 'object') ? {
+          id: clip(m.replyTo.id, 40), name: clip(m.replyTo.name, 40), text: clip(m.replyTo.text, 140),
+        } : null,
       };
       if (!message.text && !(message.quote && message.quote.length)) return;
       chat.push(message);
       pruneChat();
-      broadcast({ type: 'chat', message }, ws); // sender already added it locally
+      broadcast({ type: 'chat', message }); // to everyone (incl. author) so ids match
       persist();
+    } else if (m.type === 'editing') {
+      // Live "who's editing this cell" relay (ephemeral, not persisted).
+      const r = m.r | 0, c = m.c | 0;
+      if (r < 0 || c < 0) return;
+      const key = r + ',' + c;
+      ws._editing = ws._editing || new Set();
+      if (m.done) {
+        ws._editing.delete(key);
+        broadcast({ type: 'editing', r, c, editorId: ws._eid, done: true }, ws);
+      } else {
+        ws._editing.add(key);
+        broadcast({ type: 'editing', r, c, name: clip(m.name, 40) || 'Someone', editorId: ws._eid }, ws);
+      }
     }
   });
 
-  ws.on('close', presence);
+  ws.on('close', () => {
+    if (ws._editing) for (const key of ws._editing) {
+      const [r, c] = key.split(',');
+      broadcast({ type: 'editing', r: +r, c: +c, editorId: ws._eid, done: true });
+    }
+    presence();
+  });
   ws.on('error', () => {});
 });
 

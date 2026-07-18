@@ -24,6 +24,7 @@ let comments = {}; // { "r,c": [ { name, text, ts } ] }
 let chat = [];     // [ { name, text, ts, quote } ]  (capped, retained 5 days)
 let weekKey = null;   // ISO date of the current week's Monday
 let lastReport = null; // { forWeek, generatedAt }
+let pinnedReport = null; // { forWeek, generatedAt, completed, notDone, commented }
 const CHAT_MAX = 300;
 const CHAT_TTL_MS = 5 * 24 * 60 * 60 * 1000; // keep chat ~5 days (the work week)
 
@@ -48,6 +49,7 @@ try {
     if (saved && Array.isArray(saved.chat)) chat = saved.chat.slice(-CHAT_MAX);
     if (saved && saved.weekKey) weekKey = saved.weekKey;
     if (saved && saved.lastReport) lastReport = saved.lastReport;
+    if (saved && saved.pinnedReport) pinnedReport = saved.pinnedReport;
   }
 } catch (e) { console.error('load store failed:', e.message); }
 if (!weekKey) weekKey = weekKeyOf(new Date());
@@ -57,7 +59,7 @@ let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat, weekKey, lastReport }),
+    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat, weekKey, lastReport, pinnedReport }),
       (e) => { if (e) console.error('persist failed:', e.message); });
   }, 500);
 }
@@ -66,18 +68,11 @@ function persist() {
 function csvCell(s) { s = String(s == null ? '' : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 function csvRow(a) { return a.map(csvCell).join(','); }
 
-// One report CSV with three sections: completed (all cells filled), not
-// completed (any empty cell), and rows carrying comments.
-function buildReportCsv() {
+// Classify every data row: completed (all cells filled), not done (any empty),
+// and which rows carry comments. Shared by the CSV and the pinned summary.
+function analyzeSheet() {
   const rows = doc.rows || [];
-  const now = new Date();
-  const out = [];
-  out.push(csvRow(['M511 Label Studio — Weekly Report']));
-  out.push(csvRow(['Generated', now.toISOString()]));
-  if (lastReport) out.push(csvRow(['For week beginning (Mon)', lastReport.forWeek]));
-  out.push('');
-  if (rows.length < 1) { out.push(csvRow(['(no data)'])); return out.join('\n'); }
-
+  if (rows.length < 1) return { header: [], completed: [], notDone: [], commented: [] };
   const header = rows[0].map((h, c) => (String(h == null ? '' : h).trim() || ('Column ' + (c + 1))));
   const nCols = header.length;
   const completed = [], notDone = [], commented = [];
@@ -95,7 +90,18 @@ function buildReportCsv() {
     }
     if (cmts.length) commented.push({ ri, cells, cmts });
   }
+  return { header, completed, notDone, commented };
+}
 
+// One report CSV with three sections.
+function buildReportCsv() {
+  const { header, completed, notDone, commented } = analyzeSheet();
+  const out = [];
+  out.push(csvRow(['M511 Label Studio — Weekly Report']));
+  out.push(csvRow(['Generated', new Date().toISOString()]));
+  if (lastReport) out.push(csvRow(['For week beginning (Mon)', lastReport.forWeek]));
+  out.push('');
+  if (!header.length) { out.push(csvRow(['(no data)'])); return out.join('\n'); }
   out.push(csvRow([`COMPLETED — all cells filled (${completed.length})`]));
   out.push(csvRow(['Row', ...header]));
   completed.forEach(x => out.push(csvRow([x.ri, ...x.cells])));
@@ -110,17 +116,24 @@ function buildReportCsv() {
   return out.join('\n');
 }
 
-// On a new week (Monday), snapshot the report and reset the chat for the week.
+// On a new week (Monday): snapshot the report, reset the chat, and post the
+// report as a pinned message.
 function maybeRollWeek() {
   const nowKey = weekKeyOf(new Date());
   if (nowKey !== weekKey) {
+    const a = analyzeSheet();
     lastReport = { forWeek: weekKey, generatedAt: Date.now() };
+    pinnedReport = {
+      forWeek: weekKey,
+      generatedAt: lastReport.generatedAt,
+      completed: a.completed.length,
+      notDone: a.notDone.length,
+      commented: a.commented.length,
+    };
     weekKey = nowKey;
     chat = []; // start the new work week with a clean chat
     persist();
-    if (typeof broadcast === 'function') {
-      broadcast({ type: 'report', forWeek: lastReport.forWeek, generatedAt: lastReport.generatedAt });
-    }
+    if (typeof broadcast === 'function') broadcast({ type: 'pinned', pinned: pinnedReport });
   } else {
     pruneChat();
   }
@@ -172,7 +185,7 @@ function clip(s, n) { return String(s == null ? '' : s).slice(0, n); }
 
 wss.on('connection', (ws) => {
   maybeRollWeek();
-  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, lastReport }));
+  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, pinnedReport }));
   presence();
 
   ws.on('message', (raw) => {

@@ -18,12 +18,17 @@ const MIME = {
   '.json': 'application/json', '.ico': 'image/x-icon', '.txt': 'text/plain',
 };
 
-// ---- Shared document (rows = array of arrays of strings) ----
+// ---- Shared state: doc rows, per-cell comments, and chat ----
 let doc = { rows: [], rev: 0 };
+let comments = {}; // { "r,c": [ { name, text, ts } ] }
+let chat = [];     // [ { name, text, ts, quote } ]  (capped)
+const CHAT_MAX = 300;
 try {
   if (fs.existsSync(STORE)) {
     const saved = JSON.parse(fs.readFileSync(STORE, 'utf8'));
     if (saved && Array.isArray(saved.rows)) doc = { rows: saved.rows, rev: saved.rev || 0 };
+    if (saved && saved.comments && typeof saved.comments === 'object') comments = saved.comments;
+    if (saved && Array.isArray(saved.chat)) chat = saved.chat.slice(-CHAT_MAX);
   }
 } catch (e) { console.error('load store failed:', e.message); }
 
@@ -31,7 +36,8 @@ let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    fs.writeFile(STORE, JSON.stringify(doc), (e) => { if (e) console.error('persist failed:', e.message); });
+    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat }),
+      (e) => { if (e) console.error('persist failed:', e.message); });
   }, 500);
 }
 
@@ -66,8 +72,10 @@ function normRows(rows) {
   return rows.map(r => Array.isArray(r) ? r.map(x => (x == null ? '' : String(x))) : []);
 }
 
+function clip(s, n) { return String(s == null ? '' : s).slice(0, n); }
+
 wss.on('connection', (ws) => {
-  ws.send(JSON.stringify({ type: 'doc', rows: doc.rows, rev: doc.rev }));
+  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat }));
   presence();
 
   ws.on('message', (raw) => {
@@ -86,6 +94,27 @@ wss.on('connection', (ws) => {
       doc.rows = normRows(m.rows);
       doc.rev++;
       broadcast({ type: 'doc', rows: doc.rows, rev: doc.rev }, ws);
+      persist();
+    } else if (m.type === 'comment') {
+      const r = m.r | 0, c = m.c | 0;
+      if (r < 0 || c < 0) return;
+      const key = r + ',' + c;
+      const comment = { name: clip(m.name, 40), text: clip(m.text, 500), ts: Date.now() };
+      if (!comment.text) return;
+      (comments[key] = comments[key] || []).push(comment);
+      broadcast({ type: 'comment', r, c, comment }, ws); // sender already added it locally
+      persist();
+    } else if (m.type === 'chat') {
+      const message = {
+        name: clip(m.name, 40), text: clip(m.text, 1000), ts: Date.now(),
+        quote: Array.isArray(m.quote) ? m.quote.slice(0, 60).map(q => ({
+          ref: clip(q.ref, 24), value: clip(q.value, 200),
+        })) : null,
+      };
+      if (!message.text && !(message.quote && message.quote.length)) return;
+      chat.push(message);
+      if (chat.length > CHAT_MAX) chat = chat.slice(-CHAT_MAX);
+      broadcast({ type: 'chat', message }, ws); // sender already added it locally
       persist();
     }
   });

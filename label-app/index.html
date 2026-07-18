@@ -1635,16 +1635,43 @@
   // Import from the data tab reuses the same file picker as the top panel.
   el.btnImportData.addEventListener('click', () => el.fileInput.click());
 
-  el.btnExportCsv.addEventListener('click', () => {
+  async function exportCsv() {
     if (!rawRows.length) { log('Nothing to export.', 'warn'); return; }
-    const blob = new Blob([csvSerialize(rawRows)], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'labels.csv';
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-    log('Exported CSV.', 'ok');
-  });
+    const csv = csvSerialize(rawRows);
+    const filename = 'labels.csv';
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      || (navigator.maxTouchPoints || 0) > 1;
+    // On mobile the native share sheet is the reliable way to save a file
+    // (the download attribute is often ignored there).
+    if (isMobile && navigator.canShare) {
+      try {
+        const file = new File([csv], filename, { type: 'text/csv' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: filename });
+          log('Shared CSV.', 'ok');
+          return;
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // user cancelled the share
+        // otherwise fall through to the download path
+      }
+    }
+    // Anchor download (desktop + Android Chrome). Revoke on a delay — revoking
+    // synchronously right after click() can cancel the download.
+    try {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+      log('Exported CSV — check your downloads.', 'ok');
+    } catch (e) {
+      log('Export failed: ' + (e.message || e), 'err');
+    }
+  }
+  el.btnExportCsv.addEventListener('click', exportCsv);
 
   // Tab switching for the bottom data bar.
   document.querySelectorAll('.databar .tab').forEach(tab => {

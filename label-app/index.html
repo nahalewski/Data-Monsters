@@ -1078,7 +1078,7 @@
             <span class="lbl2">Rotate 90°</span><span class="switch"></span>
           </div>
         </div>
-        <div class="toggle" id="flagToggle">
+        <div class="toggle on" id="flagToggle">
           <span class="lbl2">Wraparound flag · duplicate</span><span class="switch"></span>
         </div>
       </div>
@@ -1124,21 +1124,21 @@
       <div class="panel-body">
         <div class="row" style="margin-bottom:12px;">
           <label class="field" style="margin-bottom:0;">
-            <span class="lbl">Cell width (in)</span>
-            <input type="number" id="labelW" value="1.18" min="0.2" max="12" step="0.001" />
+            <span class="lbl">Sticker width (in)</span>
+            <input type="number" id="labelW" value="1.0" min="0.2" max="12" step="0.001" />
           </label>
           <label class="field" style="margin-bottom:0;">
-            <span class="lbl">Cell height (in)</span>
-            <input type="number" id="labelH" value="1.58" min="0.2" max="12" step="0.001" />
+            <span class="lbl">Sticker height (in)</span>
+            <input type="number" id="labelH" value="0.5" min="0.2" max="12" step="0.001" />
           </label>
         </div>
         <div class="seg" id="sizePreset" style="margin-bottom:10px;">
-          <button data-w="1.18" data-h="1.58">1.18 × 1.58 (M5-01-425-FT cell)</button>
-          <button data-w="1.575" data-h="1.181">1.575 × 1.181 (rotated)</button>
+          <button data-w="1.0" data-h="0.5">1.0 × 0.5 (M5-01-425-FT flag)</button>
+          <button data-w="0.5" data-h="1.0">0.5 × 1.0 (rotated)</button>
         </div>
-        <button id="btnUseSupply" class="btn" disabled>⤓ Use printer's label size</button>
+        <button id="btnUseSupply" class="btn" disabled>⤓ Use printer's media size</button>
         <div class="import-info" style="margin-top:10px;">
-          This is <b>one</b> pre-sized cell (Brady reports ~1.18 × 1.58 in). Flag and Port A·B modes print <b>two</b> cells stacked, spanning the perforation — so text stays full-size on each panel. “Use printer's label size” fills the cell size from the loaded supply.
+          The printable <b>sticker</b> is 1.0 × 0.5 in with a horizontal perforation across its middle, centered on the 1.18 × 1.58 in <b>media</b>. Flag / Port A·B modes print the text on the top half upright and duplicate it on the bottom half rotated 180°, so both faces read upright once folded. “Use printer's media size” fills the media size from the loaded supply.
         </div>
       </div>
     </div>
@@ -1158,12 +1158,14 @@
           <div class="label-frame" id="labelFrame">
             <div class="dim dim-w" id="dimW">1.18 in</div>
             <div class="dim dim-h" id="dimH">1.58 in</div>
+            <!-- media 1.18×1.58 · sticker 1.0×0.5 centered -->
+
             <canvas id="preview"></canvas>
             <div class="part-tag">BRADY M5-01-425-FT · DIE-CUT</div>
           </div>
         </div>
         <div class="stage-meta" style="margin-top:16px;">
-          <span><b>Stock:</b> <span id="metaStock">1.18 × 1.58 in/cell</span></span>
+          <span><b>Stock:</b> <span id="metaStock">1.000 × 0.500 in sticker · perf mid</span></span>
           <span><b>Screen:</b> <span id="metaScreenPx">—</span></span>
           <span><b>Print target:</b> <span id="metaPrintDpi">300 DPI</span></span>
         </div>
@@ -1324,11 +1326,17 @@
 
 <script type="module">
   // ---- Label spec (Brady M5-01-425-FT default; adjustable in the UI) ----
-  // LABEL_W_IN × LABEL_H_IN is ONE pre-sized cell/panel (Brady reports
-  // 1.181 × 1.575 in). Flag / Port A·B modes print TWO cells stacked, so the
-  // full flag spans the perforation (~1.18 × 3.15 in).
-  let LABEL_W_IN = 1.18;
-  let LABEL_H_IN = 1.58;
+  // Two sizes matter:
+  //  • MEDIA (paper/liner the printer feeds): 1.18 × 1.58 in — the canvas size.
+  //  • PRINTABLE STICKER (the die-cut adhesive label, centered on the media):
+  //    1.0 × 0.5 in, with a horizontal perforation across its middle → two
+  //    equal 1.0 × 0.25 in halves. Flag / Port A·B modes print the text on the
+  //    top half upright and duplicate it on the bottom half rotated 180°, so
+  //    both faces read upright once the flag is folded at the perforation.
+  let MEDIA_W_IN = 1.18;
+  let MEDIA_H_IN = 1.58;
+  let LABEL_W_IN = 1.0;   // printable sticker width
+  let LABEL_H_IN = 0.5;   // printable sticker height (perf at its vertical centre)
   const SCREEN_DPI = 150;          // on-screen true-scale render
   const PRINT_DPI_FALLBACK = 300;  // used if SDK doesn't report DPI
 
@@ -1386,7 +1394,7 @@
     align: 'center',
     bold: false,
     rotate: false,
-    flag: false,
+    flag: true,
     font: 'mono',
     autoFit: true,
     connected: false,
@@ -1567,19 +1575,20 @@
   }
 
   // ---- Rendering ----
-  // Draw the label onto a given canvas at a target dpi. Returns nothing.
-  // LABEL_W_IN × LABEL_H_IN is ONE panel/cell. Flag mode prints two cells
-  // stacked (spanning the perforation), each a full-size cell.
+  // Draw the label onto a given canvas at a target dpi. The canvas is the full
+  // MEDIA (paper) size; the printable die-cut sticker (LABEL_W_IN × LABEL_H_IN)
+  // is centered within it. Flag mode splits the sticker at its horizontal
+  // perforation into two equal halves — top upright, bottom rotated 180°.
   function renderLabel(canvas, dpi) {
     const rotate = state.rotate;
-    // One-cell dims; when rotated, swap so text runs along the long edge.
-    const cellWIn = rotate ? LABEL_H_IN : LABEL_W_IN;
-    const cellHIn = rotate ? LABEL_W_IN : LABEL_H_IN;
-    const twoPanel = state.flag;
+    // Media (canvas) dims, and the printable sticker dims; rotate swaps both.
+    const mediaW = rotate ? MEDIA_H_IN : MEDIA_W_IN;
+    const mediaH = rotate ? MEDIA_W_IN : MEDIA_H_IN;
+    const stickWIn = rotate ? LABEL_H_IN : LABEL_W_IN;
+    const stickHIn = rotate ? LABEL_W_IN : LABEL_H_IN;
 
-    const wPx = Math.round(cellWIn * dpi);
-    const cellPx = Math.round(cellHIn * dpi);   // one cell height
-    const hPx = twoPanel ? cellPx * 2 : cellPx; // flag = two cells stacked
+    const wPx = Math.round(mediaW * dpi);
+    const hPx = Math.round(mediaH * dpi);
     canvas.width = wPx;
     canvas.height = hPx;
 
@@ -1589,11 +1598,20 @@
     ctx.fillStyle = isPrint ? '#ffffff' : '#f4f1e8';
     ctx.fillRect(0, 0, wPx, hPx);
 
-    // Thin border to suggest die-cut edge (screen only).
+    // Printable sticker rectangle, centered on the media.
+    const sW = Math.round(stickWIn * dpi);
+    const sH = Math.round(stickHIn * dpi);
+    const sX = Math.round((wPx - sW) / 2);
+    const sY = Math.round((hPx - sH) / 2);
+
+    // Screen-only guides: media edge + die-cut sticker outline.
     if (!isPrint) {
-      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.14)';
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, 0.5, wPx - 1, hPx - 1);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.setLineDash([]);
+      ctx.strokeRect(sX + 0.5, sY + 0.5, sW - 1, sH - 1);
     }
 
     // Text setup
@@ -1603,16 +1621,17 @@
     const family = state.font === 'mono'
       ? `"SF Mono", "JetBrains Mono", "Consolas", "Courier New", monospace`
       : `"Helvetica Neue", Arial, sans-serif`;
-    const margin = 0.06 * dpi; // ~0.06in inner margin
+    // Small inner margin, capped so it never eats a tiny (0.25in) half panel.
+    const margin = Math.min(0.05 * dpi, sH * 0.1);
     const padX = margin;
 
-    // Each text copy fills one full cell (flag stacks two of them).
-    const boxW = wPx, boxH = cellPx;
+    // A "panel" is half the sticker in flag mode, the whole sticker otherwise.
+    const panelH = state.flag ? Math.round(sH / 2) : sH;
 
-    // Font size: auto-fit to the box, or the manual pt value.
+    // Font size: auto-fit to one panel, or the manual pt value.
     let fontPx;
     if (state.autoFit) {
-      fontPx = fitFontPx(ctx, lines, boxW - 2 * margin, boxH - 2 * margin, spacing, weight, family);
+      fontPx = fitFontPx(ctx, lines, sW - 2 * margin, panelH - 2 * margin, spacing, weight, family);
     } else {
       const fontPt = Math.max(1, parseFloat(el.fontSize.value) || 12);
       fontPx = (fontPt / 72) * dpi; // 1pt = 1/72 in
@@ -1645,14 +1664,13 @@
     }
 
     if (state.flag) {
-      // Self-laminating wraparound flag ("∀ A" in Brady's app): two full cells
-      // stacked at the perforation. Top cell upright, bottom cell rotated 180°
-      // (matching the Brady layout) so both faces read upright once folded.
-      drawBlock(0, 0, wPx, cellPx, false);       // top cell: upright reference
-      drawBlock(0, cellPx, wPx, cellPx, true);   // bottom cell: rotated 180°
-      if (!isPrint) drawFold(ctx, 0, cellPx, wPx, cellPx, 'h');
+      // Wraparound flag: text on the top half upright, duplicated on the bottom
+      // half rotated 180° so both faces read upright once folded at the perf.
+      drawBlock(sX, sY, sW, panelH, false);             // top half: upright
+      drawBlock(sX, sY + panelH, sW, sH - panelH, true); // bottom half: 180°
+      if (!isPrint) drawFold(ctx, sX, sY + panelH, sW, 0, 'h'); // perforation line
     } else {
-      drawBlock(0, 0, wPx, cellPx, false);
+      drawBlock(sX, sY, sW, sH, false);
     }
   }
 
@@ -1690,15 +1708,15 @@
 
   function renderPreview() {
     renderLabel(el.preview, SCREEN_DPI);
-    // Dimension callouts reflect the actual printed size: flag prints 2 cells.
+    // Frame callouts show the media (canvas) size; metaStock shows the sticker.
     const rotate = state.rotate;
-    const cellWIn = rotate ? LABEL_H_IN : LABEL_W_IN;
-    const cellHIn = rotate ? LABEL_W_IN : LABEL_H_IN;
-    const panels = state.flag ? 2 : 1;
-    el.dimW.textContent = `${cellWIn.toFixed(3)} in`;
-    el.dimH.textContent = `${(cellHIn * panels).toFixed(3)} in` + (panels === 2 ? ' (2 panels)' : '');
+    const mediaW = rotate ? MEDIA_H_IN : MEDIA_W_IN;
+    const mediaH = rotate ? MEDIA_W_IN : MEDIA_H_IN;
+    el.dimW.textContent = `${mediaW.toFixed(2)} in`;
+    el.dimH.textContent = `${mediaH.toFixed(2)} in`;
     el.metaScreenPx.textContent = `${el.preview.width} × ${el.preview.height} px @ ${SCREEN_DPI}dpi`;
-    el.metaStock.textContent = `${LABEL_W_IN.toFixed(3)} × ${LABEL_H_IN.toFixed(3)} in/cell`;
+    el.metaStock.textContent = `${LABEL_W_IN.toFixed(3)} × ${LABEL_H_IN.toFixed(3)} in sticker`
+      + (state.flag ? ' · perf mid' : '');
     el.dpiTag.textContent = `${SCREEN_DPI} DPI`;
   }
 
@@ -1778,10 +1796,12 @@
       log(`Could not interpret supply dimensions: ${JSON.stringify(dim)}.`, 'warn');
       return;
     }
-    el.labelW.value = wIn.toFixed(3);
-    el.labelH.value = hIn.toFixed(3);
-    applyLabelSize();
-    log(`Applied printer label size: ${wIn.toFixed(3)} × ${hIn.toFixed(3)} in (from ${JSON.stringify(dim)}).`, 'ok');
+    // The printer reports the MEDIA (paper) size — set that; the die-cut
+    // sticker size stays as configured in the inputs.
+    MEDIA_W_IN = wIn;
+    MEDIA_H_IN = hIn;
+    renderPreview();
+    log(`Applied printer media size: ${wIn.toFixed(3)} × ${hIn.toFixed(3)} in (from ${JSON.stringify(dim)}).`, 'ok');
   });
 
   el.alignSeg.querySelectorAll('button').forEach(btn => {
@@ -2989,21 +3009,32 @@
   });
 
   // Render a port label: Port A on one face, Port B on the other, so each side
-  // of the folded flag shows its end. Independent of the designer's settings.
+  // of the folded flag shows its end. Canvas is the media; the two ports sit in
+  // the two halves of the centered printable sticker (split at its perf).
   function renderPortLabel(canvas, dpi, portA, portB) {
-    const wPx = Math.round(LABEL_W_IN * dpi);
-    const cellPx = Math.round(LABEL_H_IN * dpi); // one cell
-    const hPx = cellPx * 2;                       // two cells, spanning the perforation
+    const wPx = Math.round(MEDIA_W_IN * dpi);
+    const hPx = Math.round(MEDIA_H_IN * dpi);
     canvas.width = wPx; canvas.height = hPx;
     const ctx = canvas.getContext('2d');
     const isPrint = canvas === el.printCanvas;
     ctx.fillStyle = isPrint ? '#ffffff' : '#f4f1e8';
     ctx.fillRect(0, 0, wPx, hPx);
-    const margin = 0.06 * dpi;
-    // Brady "B A" flag: Port A on the top cell (upright), Port B on the bottom
-    // cell (rotated 180° so it reads upright once folded at the perforation).
-    drawFittedText(ctx, portA, 0, 0, wPx, cellPx, margin, false);
-    drawFittedText(ctx, portB, 0, cellPx, wPx, cellPx, margin, true);
+    // Printable sticker, centered; split at the horizontal perforation.
+    const sW = Math.round(LABEL_W_IN * dpi);
+    const sH = Math.round(LABEL_H_IN * dpi);
+    const sX = Math.round((wPx - sW) / 2);
+    const sY = Math.round((hPx - sH) / 2);
+    const panelH = Math.round(sH / 2);
+    const margin = Math.min(0.05 * dpi, sH * 0.1);
+    if (!isPrint) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+      ctx.strokeRect(sX + 0.5, sY + 0.5, sW - 1, sH - 1);
+      drawFold(ctx, sX, sY + panelH, sW, 0, 'h');
+    }
+    // Port A on the top half (upright), Port B on the bottom half (rotated 180°
+    // so it reads upright once folded at the perforation).
+    drawFittedText(ctx, portA, sX, sY, sW, panelH, margin, false);
+    drawFittedText(ctx, portB, sX, sY + panelH, sW, sH - panelH, margin, true);
   }
 
   // Auto-fit and draw text centered in a box, optionally rotated 180°.

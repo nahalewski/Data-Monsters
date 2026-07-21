@@ -556,6 +556,58 @@
   .comment-pop .scan-input { background: #fff; border: 1px solid #dadce0; color: #202124; border-radius: 8px; }
   .comment-pop .btn { background: #1a73e8; color: #fff; border: none; border-radius: 8px; text-transform: none; font-family: var(--sans); font-weight: 600; }
 
+  /* ============================================================
+     FIBER / MRN workflow (fiber CSV only)
+     ============================================================ */
+  #page-csv .tabbar-actions .fiber-btn { color: #1a73e8; }
+  #page-csv .tabbar-actions .fiber-btn:hover { color: #fff; background: #1a73e8; }
+  /* WAN-link breakdown bar */
+  .fiber-breakdown {
+    margin: 8px 14px 0; padding: 10px 12px; border: 1px solid #d2e3fc; border-radius: 8px;
+    background: #e8f0fe; font-family: var(--sans); font-size: 12.5px; color: #202124; line-height: 1.5;
+  }
+  .fiber-breakdown .fb-title { font-weight: 700; color: #1a73e8; margin-bottom: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .fiber-breakdown .fb-title .fb-row { color: #5f6368; font-weight: 600; font-size: 11.5px; }
+  .fiber-breakdown .fb-grid { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+  .fiber-breakdown .fb-chip {
+    display: inline-flex; align-items: baseline; gap: 5px; background: #fff; border: 1px solid #d2e3fc;
+    border-radius: 6px; padding: 3px 8px; font-size: 12px;
+  }
+  .fiber-breakdown .fb-chip .k { color: #5f6368; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; }
+  .fiber-breakdown .fb-chip .v { color: #202124; font-family: var(--mono); font-weight: 600; }
+  .fiber-breakdown .fb-chip.z .v { color: #1e8e3e; }
+  .fiber-breakdown .fb-chip.prio .v { color: #d93025; }
+  .fiber-breakdown .fb-chip.serial .v { color: #1a73e8; }
+  .fiber-breakdown .fb-empty { color: #5f6368; font-style: italic; }
+  /* Labeled / Ported checkbox cells */
+  #page-csv .data-table td.fibchk { text-align: center; }
+  #page-csv .data-table td.fibchk input { width: 17px; height: 17px; cursor: pointer; accent-color: #1e8e3e; }
+  #page-csv .data-table tr.hrow td.fibcolh { color: #0b6b2e; font-size: 11px; }
+  /* Selected fiber row + its matching-serial partners */
+  #page-csv .data-table tr.fiber-sel td { background: #fff3cd !important; }
+  #page-csv .data-table tr.fiber-sel td.rownum { background: #ffe08a !important; color: #7a5b00 !important; font-weight: 700; }
+  #page-csv .data-table tr.fiber-match td { background: #e6f4ea !important; }
+  #page-csv .data-table tr.fiber-match td.rownum { background: #b6e3c6 !important; color: #0b6b2e !important; }
+  /* Flashing strand-index cell to link matching A-side ports */
+  @keyframes fiberFlash { 0%,100% { background:#fff3cd; } 50% { background:#ff7043; color:#fff; } }
+  #page-csv .data-table td.fiber-flash { animation: fiberFlash 0.9s ease-in-out infinite; font-weight: 700; }
+  /* Floating Port A / Port Z read-out while scanning */
+  .fiber-scan-bubble {
+    position: fixed; right: 16px; bottom: 16px; z-index: 210; max-width: min(420px, 92vw);
+    background: #202124; color: #fff; border-radius: 12px; padding: 12px 16px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.4); font-family: var(--sans); font-size: 14px;
+    border-left: 4px solid #1a73e8;
+  }
+  .fiber-scan-bubble .fsb-row { font-size: 11px; color: #9aa0a6; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .4px; }
+  .fiber-scan-bubble .fsb-line { display: flex; gap: 8px; align-items: baseline; margin: 2px 0; }
+  .fiber-scan-bubble .fsb-k { color: #8ab4f8; font-weight: 700; min-width: 54px; }
+  .fiber-scan-bubble .fsb-k.z { color: #81c995; }
+  .fiber-scan-bubble .fsb-v { font-family: var(--mono); word-break: break-all; }
+  @media (max-width: 620px) {
+    .fiber-breakdown { margin: 8px 10px 0; font-size: 12px; }
+    .fiber-scan-bubble { left: 8px; right: 8px; bottom: 8px; top: auto; max-width: none; }
+  }
+
   /* Toast notifications */
   .toast-wrap {
     position: fixed; top: 14px; right: 14px; z-index: 200;
@@ -1197,6 +1249,7 @@
       <button id="btnAddCol" class="linkbtn">+ col</button>
       <button id="btnExportCsv" class="linkbtn">↓ export</button>
       <button id="btnReport" class="linkbtn" title="Download the completed / not-completed / commented report">📊 report</button>
+      <button id="btnFiberLabels" class="linkbtn fiber-btn" title="Pull B1 ID / Chassis A / Port A / Chassis Z / Port Z and print 2 labels per row" style="display:none;">🏷️ fiber labels</button>
     </div>
   </div>
   <div class="tabpanes">
@@ -1214,14 +1267,15 @@
             <option value="record">on selected record</option>
             <option value="newrow">as a new row</option>
             <option value="sequential">fill columns L→R</option>
+            <option value="fiber">serial → B1 Serial Number (fiber)</option>
           </select>
         </div>
       </details>
       <details class="tool-details" id="printDetails">
-        <summary><span>▶▶ Print checked → Port A / Port B</span></summary>
+        <summary><span>▶▶ Print checked → Port A / Port Z</span></summary>
         <div class="scanbar printbar">
           <label class="scan-lbl">Port A <select id="portACol" class="scan-sel"></select></label>
-          <label class="scan-lbl">Port B <select id="portBCol" class="scan-sel"></select></label>
+          <label class="scan-lbl">Port Z <select id="portBCol" class="scan-sel"></select></label>
           <button id="btnPrintSelected" class="btn printsel-btn" disabled>▶▶ Print checked (0)</button>
         </div>
       </details>
@@ -1235,6 +1289,8 @@
         <button id="btnQuoteInChat" class="btn printsel-btn" disabled>❝ Quote in chat</button>
         <button id="btnQuoteClear" class="linkbtn">clear</button>
       </div>
+      <!-- Fiber WAN-link breakdown (fiber CSV only; updates with the selected row) -->
+      <div class="fiber-breakdown" id="fiberBreakdown" style="display:none;"></div>
       <div class="table-statusrow">
         <span class="databar-status" id="dataStatus">no data</span>
         <button id="btnQuoteChecked" class="linkbtn quote-checked-btn" style="display:none;">❝ quote checked rows in chat</button>
@@ -1299,6 +1355,8 @@
 
 <!-- Toast notifications -->
 <div class="toast-wrap" id="toastWrap"></div>
+<!-- Floating Port A / Port Z read-out shown while scanning serials (kept away from the serial cell) -->
+<div class="fiber-scan-bubble" id="fiberScanBubble" style="display:none;"></div>
 
 <!-- First-view name prompt (once per device) -->
 <div class="name-modal" id="nameModal" style="display:none;">
@@ -1363,6 +1421,7 @@
     scanCount: $('scanCount'), scanIco: $('scanIco'), btnAddCol: $('btnAddCol'),
     portACol: $('portACol'), portBCol: $('portBCol'), btnPrintSelected: $('btnPrintSelected'),
     btnQuoteChecked: $('btnQuoteChecked'),
+    btnFiberLabels: $('btnFiberLabels'), fiberBreakdown: $('fiberBreakdown'), fiberScanBubble: $('fiberScanBubble'),
     liveBadge: $('liveBadge'), liveText: $('liveText'), btnReport: $('btnReport'),
     btnQuoteMode: $('btnQuoteMode'), quoteBar: $('quoteBar'), quoteCount: $('quoteCount'),
     btnQuoteInChat: $('btnQuoteInChat'), btnQuoteClear: $('btnQuoteClear'), chatBadge: $('chatBadge'),
@@ -2015,6 +2074,126 @@
     }).join(',')).join('\n');
   }
 
+  // ============================================================
+  // Fiber / MRN workflow — detection, column map, and helpers
+  // ============================================================
+  const FIBER_COLS = {
+    wan: 'WAN Link', serial: 'B1 Serial Number', id: 'B1 ID', priority: 'B1 Priority',
+    cableIndex: 'B1 Cable Index', strandIndex: 'B1 Strand Index',
+    rackA: 'B1 Rack A', chassisA: 'B1 Chassis A', portA: 'B1 Port A',
+    portALabeled: 'B1 Port A Labeled', portAPorted: 'B1 Port A Ported',
+    rackZ: 'B1 Rack Z', chassisZ: 'B1 Chassis Z', portZ: 'B1 Port Z',
+    portZLabeled: 'B1 Port Z Labeled', portZPorted: 'B1 Port Z Ported',
+  };
+  let fiber = null;          // { cols:{key:idx}, checkCols:Set<idx> } for a fiber CSV
+  let fiberSelRow = null;    // selected rawRows index (data row)
+  let fiberScanInited = false;
+  let fiberScanRow = null;   // pointer for serial-scan auto-advance
+  let fiberBubbleTimer = null;
+
+  function headerRowCells() {
+    const headerMode = el.headerToggle.classList.contains('on');
+    if (!headerMode || !rawRows.length) return null;
+    return rawRows[0].map(c => (c == null ? '' : String(c)).trim());
+  }
+  // Return {cols, checkCols} if this looks like the fiber CSV, else null.
+  function detectFiber() {
+    const hdr = headerRowCells();
+    if (!hdr) return null;
+    const idx = (label) => hdr.findIndex(h => h.toLowerCase() === label.toLowerCase());
+    const cols = {};
+    for (const [k, label] of Object.entries(FIBER_COLS)) cols[k] = idx(label);
+    const need = ['id', 'chassisA', 'portA', 'chassisZ', 'portZ', 'serial'];
+    if (need.some(k => cols[k] < 0)) return null;
+    const checkCols = new Set([cols.portALabeled, cols.portAPorted, cols.portZLabeled, cols.portZPorted].filter(i => i >= 0));
+    return { cols, checkCols };
+  }
+  // TRUE/FALSE-ish test for the Labeled/Ported columns.
+  function fiberChecked(v) { return /^(true|yes|1|x|✓|checked)$/i.test(String(v == null ? '' : v).trim()); }
+  // rawRows indices sharing a non-empty serial with row r (excludes r itself).
+  function fiberMatchingRows(r) {
+    if (!fiber || fiber.cols.serial < 0) return [];
+    const sv = ((rawRows[r] && rawRows[r][fiber.cols.serial]) || '').trim();
+    if (!sv) return [];
+    const headerMode = el.headerToggle.classList.contains('on');
+    const out = [];
+    rawRows.forEach((row, ri) => {
+      if (headerMode && ri === 0) return;
+      if (ri !== r && ((row[fiber.cols.serial] || '').trim() === sv)) out.push(ri);
+    });
+    return out;
+  }
+  // A row is "done on the A side" when its Labeled + Ported are both checked.
+  function fiberADone(r) {
+    if (!fiber) return false;
+    const row = rawRows[r] || [];
+    return fiberChecked(row[fiber.cols.portALabeled]) && fiberChecked(row[fiber.cols.portAPorted]);
+  }
+  // Strip a leading 2-letter code (HZ-, TU-, …); keep the 12345678-016M-05 part.
+  function stripSerial(v) { return String(v || '').trim().replace(/^[A-Za-z]{2}-/, ''); }
+  // Compose a 3-line label for a data row: ID / ChassisA PortA / ChassisZ PortZ.
+  function fiberLabelText(row) {
+    const g = (k) => { const i = fiber.cols[k]; return (i >= 0 && row[i] != null) ? String(row[i]).trim() : ''; };
+    const l1 = g('id');
+    const l2 = [g('chassisA'), g('portA')].filter(Boolean).join(' ');
+    const l3 = [g('chassisZ'), g('portZ')].filter(Boolean).join(' ');
+    return [l1, l2, l3].filter(v => v !== '').join('\n');
+  }
+
+  // Human-readable breakdown of the selected row's WAN link + key fields.
+  function renderFiberBreakdown() {
+    if (!fiber || fiberSelRow == null || !rawRows[fiberSelRow]) { el.fiberBreakdown.style.display = 'none'; return; }
+    const row = rawRows[fiberSelRow];
+    const g = (k) => { const i = fiber.cols[k]; return (i >= 0 && row[i] != null) ? String(row[i]).trim() : ''; };
+    const chips = [];
+    const chip = (k, v, cls) => { if (v) chips.push(`<span class="fb-chip ${cls || ''}"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(v)}</span></span>`); };
+    const id = g('id'), rackA = g('chassisA'), portA = g('portA');
+    const rackZ = g('rackZ'), chassisZ = g('chassisZ'), portZ = g('portZ');
+    const prio = g('priority'), strand = g('strandIndex'), serial = g('serial');
+    // Rack + room/building from the A-side chassis (df1cs2n1b5.mrn05).
+    const am = rackA.match(/^([^.]+)\.([a-z0-9]+)/i);
+    if (am) { chip('Rack', am[1]); chip('Room/Bldg', am[2].toUpperCase()); }
+    // Floor from the ID or Z chassis (…-F2-…).
+    const floor = ((id.match(/-(F\d)-/i) || [])[1]) || ((chassisZ.match(/-(F\d)-/i) || [])[1]);
+    if (floor) chip('Floor', floor.toUpperCase().replace('F', 'Floor '));
+    if (/-SF-/i.test(id)) chip('Area', 'SF · server floor');
+    if (id) chip('MPO line', id);
+    const spp = (chassisZ.match(/spp(\d+)/i) || [])[1];
+    if (spp) chip('SPP', 'spp' + spp, 'z');
+    if (rackZ) chip('Rack Z loc', rackZ, 'z');
+    // MPO tray/port on Z (mpo-A/26/9,10 → tray A, port 26, strands 9,10).
+    const mm = portZ.match(/mpo-([A-Za-z])\/(\d+)\/([\d,]+)/i);
+    if (mm) chip('MPO Z', `tray ${mm[1].toUpperCase()} · port ${mm[2]} · strands ${mm[3]}`, 'z');
+    else if (portZ) chip('Port Z', portZ, 'z');
+    if (portA) chip('Port A', portA);
+    if (prio) { const n = (prio.match(/P(\d)/i) || [])[1]; chip('Priority', prio + (n != null ? (n === '0' ? ' · highest' : n === '5' ? ' · lowest' : ' · P0 high…P5 low') : ''), 'prio'); }
+    if (strand) chip('Strand idx', strand, serial ? 'serial' : '');
+    if (serial) chip('Serial', serial, 'serial');
+    const wan = g('wan');
+    const rn = el.headerToggle.classList.contains('on') ? fiberSelRow : fiberSelRow + 1;
+    el.fiberBreakdown.style.display = '';
+    el.fiberBreakdown.innerHTML =
+      `<div class="fb-title">🔗 WAN link breakdown <span class="fb-row">row ${rn} · tap the row # again to clear</span></div>`
+      + (wan ? `<div class="fb-chip" style="max-width:100%;margin-bottom:6px;"><span class="v" style="white-space:normal">${escapeHtml(wan)}</span></div>` : '')
+      + `<div class="fb-grid">${chips.join('') || '<span class="fb-empty">No parsable fields.</span>'}</div>`;
+  }
+
+  // Floating Port A / Port Z read-out while scanning serials (row just written).
+  function showFiberScanBubble(r) {
+    if (!fiber) return;
+    const row = rawRows[r] || [];
+    const cell = (k) => { const i = fiber.cols[k]; return (i >= 0 && row[i] != null && String(row[i]).trim()) ? String(row[i]).trim() : '(none)'; };
+    const idv = (fiber.cols.id >= 0 && row[fiber.cols.id]) ? String(row[fiber.cols.id]).trim() : '';
+    const rn = el.headerToggle.classList.contains('on') ? r : r + 1;
+    el.fiberScanBubble.style.display = '';
+    el.fiberScanBubble.innerHTML =
+      `<div class="fsb-row">📷 scanned · row ${rn}${idv ? ' · ' + escapeHtml(idv) : ''}</div>`
+      + `<div class="fsb-line"><span class="fsb-k">Port A</span><span class="fsb-v">${escapeHtml(cell('portA'))}</span></div>`
+      + `<div class="fsb-line"><span class="fsb-k z">Port Z</span><span class="fsb-v">${escapeHtml(cell('portZ'))}</span></div>`;
+    clearTimeout(fiberBubbleTimer);
+    fiberBubbleTimer = setTimeout(() => { el.fiberScanBubble.style.display = 'none'; }, 7000);
+  }
+
   // Render the editable grid from rawRows. Not called while a cell is focused
   // (that would drop the caret) — cell edits mutate the DOM in place instead.
   function renderDataTable() {
@@ -2023,16 +2202,33 @@
       t.style.display = 'none';
       el.dataEmpty.style.display = '';
       el.dataStatus.textContent = 'no data';
+      fiber = null; fiberSelRow = null;
+      el.btnFiberLabels.style.display = 'none';
+      el.fiberBreakdown.style.display = 'none';
       return;
     }
     el.dataEmpty.style.display = 'none';
     t.style.display = '';
     const headerMode = el.headerToggle.classList.contains('on');
     const maxCols = rawRows.reduce((m, r) => Math.max(m, r.length), 1);
+    // Detect the fiber CSV and toggle its extra UI.
+    fiber = detectFiber();
+    el.btnFiberLabels.style.display = fiber ? '' : 'none';
+    if (fiber && !fiberScanInited) { el.scanMode.value = 'fiber'; el.scanMode.dispatchEvent(new Event('change')); fiberScanInited = true; }
+    if (!fiber) fiberSelRow = null;
+    // Fiber highlighting: the selected row + its matching-serial partners.
+    const matchSet = (fiber && fiberSelRow != null) ? new Set(fiberMatchingRows(fiberSelRow)) : null;
+    const strandCol = fiber ? fiber.cols.strandIndex : -1;
+    const flashOn = fiber && fiberSelRow != null && !fiberADone(fiberSelRow);
     let html = '';
     rawRows.forEach((row, r) => {
       const isHeader = headerMode && r === 0;
-      html += `<tr class="${isHeader ? 'hrow' : 'drow'}">`;
+      let trCls = isHeader ? 'hrow' : 'drow';
+      if (!isHeader && fiber && fiberSelRow != null) {
+        if (r === fiberSelRow) trCls += ' fiber-sel';
+        else if (matchSet && matchSet.has(r)) trCls += ' fiber-match';
+      }
+      html += `<tr class="${trCls}">`;
       if (isHeader) {
         html += `<td class="chk"><input type="checkbox" class="chkall" title="select all"></td>`;
       } else {
@@ -2042,10 +2238,18 @@
       for (let c = 0; c < maxCols; c++) {
         const val = row[c] == null ? '' : String(row[c]);
         const key = r + ',' + c;
+        // Labeled / Ported columns render as checkboxes (data rows only).
+        if (fiber && !isHeader && fiber.checkCols.has(c)) {
+          html += `<td class="cell fibchk" data-r="${r}" data-c="${c}"><input type="checkbox" class="fibcheck" data-r="${r}" data-c="${c}"${fiberChecked(val) ? ' checked' : ''}></td>`;
+          continue;
+        }
         const nCmt = (comments[key] && comments[key].length) || 0;
         const cmtAttr = nCmt ? ` data-cmt="${nCmt}"` : '';
         const sel = quoteCells.has(key) ? ' qsel' : '';
-        html += `<td class="cell${sel}" contenteditable="${quoteMode ? 'false' : 'true'}" data-r="${r}" data-c="${c}"${cmtAttr}>${escapeHtml(val)}</td>`;
+        // Flash the strand-index cell of the selected row + partners until A-side done.
+        const flash = (flashOn && c === strandCol && (r === fiberSelRow || (matchSet && matchSet.has(r)))) ? ' fiber-flash' : '';
+        const hcls = (fiber && isHeader && fiber.checkCols.has(c)) ? ' fibcolh' : '';
+        html += `<td class="cell${sel}${flash}${hcls}" contenteditable="${quoteMode ? 'false' : 'true'}" data-r="${r}" data-c="${c}"${cmtAttr}>${escapeHtml(val)}</td>`;
       }
       html += `<td class="rowdel" data-del="${r}" title="delete row">×</td>`;
       html += '</tr>';
@@ -2064,6 +2268,7 @@
     updatePortCols();
     updatePrintSelected();
     repaintAllEditing();
+    renderFiberBreakdown();
   }
 
   // ---- Live "who is editing this cell" bubbles (keyed by editorId) ----
@@ -2141,7 +2346,7 @@
     return names;
   }
 
-  // Populate the Port A / Port B column selectors, auto-detecting once.
+  // Populate the Port A / Port Z column selectors, auto-detecting once.
   function updatePortCols() {
     const names = columnNames();
     const optsHtml = names.map((n, i) => `<option value="${i}">${escapeHtml(n)}</option>`).join('');
@@ -2152,8 +2357,12 @@
     if (prevB !== '' && +prevB < names.length) el.portBCol.value = prevB;
     if (!portsAutoSet && names.length) {
       const findCol = (re) => names.findIndex(n => re.test(n));
-      let a = findCol(/port\s*a\b|(^|[^a-z])a($|[^a-z])/i);
-      let b = findCol(/port\s*b\b|(^|[^a-z])b($|[^a-z])/i);
+      // Prefer an exact "Port A" / "Port Z" column (this fiber stock uses Z, not B).
+      let a = findCol(/\bport\s*a\b/i);
+      let b = findCol(/\bport\s*z\b/i);
+      if (b < 0) b = findCol(/\bport\s*b\b/i);
+      if (a < 0) a = findCol(/(^|[^a-z])a($|[^a-z])/i);
+      if (b < 0) b = findCol(/(^|[^a-z])[bz]($|[^a-z])/i);
       if (a < 0) a = 0;
       if (b < 0) b = Math.min(1, names.length - 1);
       el.portACol.value = String(a);
@@ -2240,14 +2449,14 @@
   // Broadcast "I'm editing this cell" so others see a live name bubble.
   el.dataTable.addEventListener('focusin', (e) => {
     const cell = e.target.closest && e.target.closest('.cell');
-    if (!cell || quoteMode) return;
+    if (!cell || quoteMode || cell.classList.contains('fibchk')) return;
     const id = getIdentity();
     if (!id) return;
     wsSend({ type: 'editing', r: +cell.dataset.r, c: +cell.dataset.c, name: id.name });
   });
   el.dataTable.addEventListener('focusout', (e) => {
     const cell = e.target.closest && e.target.closest('.cell');
-    if (!cell) return;
+    if (!cell || cell.classList.contains('fibchk')) return;
     wsSend({ type: 'editing', r: +cell.dataset.r, c: +cell.dataset.c, done: true });
   });
   // Delete a row.
@@ -2367,6 +2576,10 @@
   function broadcastCellCommit(r, c, value) {
     wsSend({ type: 'cell', r, c, value, name: myName(), detail: editDetail(r, c, value), commit: true });
   }
+  // Commit with a caller-supplied log line (checkbox toggles, serial scans, …).
+  function broadcastCellCommitDetail(r, c, value, detail) {
+    wsSend({ type: 'cell', r, c, value, name: myName(), detail, commit: true });
+  }
 
   function setLive(cls, text) {
     el.liveBadge.className = 'live-badge' + (cls ? ' ' + cls : '');
@@ -2387,8 +2600,17 @@
     while (rawRows[r].length <= c) rawRows[r].push('');
     rawRows[r][c] = value;
     const cell = el.dataTable.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-    if (cell && cell !== document.activeElement) cell.textContent = value;
-    else if (!cell) renderDataTable();
+    // Fiber Labeled/Ported cells hold a checkbox — update it, never its text.
+    if (fiber && fiber.checkCols.has(c)) {
+      const box = cell && cell.querySelector('input.fibcheck');
+      if (box) box.checked = fiberChecked(value);
+      else renderDataTable();
+      if (fiber && fiberSelRow === r) renderDataTable(); // may end the A-side flash
+    } else if (cell && cell !== document.activeElement) {
+      cell.textContent = value;
+    } else if (!cell) {
+      renderDataTable();
+    }
     recomputeRecords();
     if (document.activeElement !== el.rawCsv) el.rawCsv.value = csvSerialize(rawRows);
   }
@@ -2914,6 +3136,32 @@
     const mode = el.scanMode.value;
     const target = Math.max(0, parseInt(el.scanTarget.value, 10) || 0);
 
+    if (mode === 'fiber') {
+      // Serial → B1 Serial Number, row 1 downward, auto-advancing each scan.
+      if (!fiber || fiber.cols.serial < 0) { log('Fiber serial scan needs the fiber CSV loaded.', 'warn'); return; }
+      const dataRows = dataRowIndices();
+      if (!dataRows.length) { log('No data rows to scan into.', 'warn'); return; }
+      if (fiberScanRow == null || !dataRows.includes(fiberScanRow)) fiberScanRow = dataRows[0];
+      const r = fiberScanRow, sc = fiber.cols.serial;
+      const clean = stripSerial(value); // drop HZ-/TU- etc., keep 12345678-016M-05
+      while (rawRows[r].length <= sc) rawRows[r].push('');
+      rawRows[r][sc] = clean;
+      renderDataTable();
+      recomputeRecords();
+      el.rawCsv.value = csvSerialize(rawRows);
+      const rn = el.headerToggle.classList.contains('on') ? r : r + 1;
+      broadcastCellCommitDetail(r, sc, clean, `scanned serial ${clean} → B1 Serial Number R${rn}`);
+      showFiberScanBubble(r);
+      const pos = dataRows.indexOf(r);
+      fiberScanRow = pos < dataRows.length - 1 ? dataRows[pos + 1] : r; // advance
+      scanCount++;
+      el.scanCount.textContent = `${scanCount} scan${scanCount === 1 ? '' : 's'}`;
+      flashScan();
+      el.scanInput.value = '';
+      el.scanInput.focus();
+      return;
+    }
+
     if (mode === 'record' && records.length && recordRawMap[recordIndex] != null) {
       // Write the serial into the selected record's target column, then advance.
       const row = rawRows[recordRawMap[recordIndex]];
@@ -2981,10 +3229,11 @@
     }
   });
   el.scanMode.addEventListener('change', () => {
-    // "into column" applies to record + new-row modes, not sequential.
-    const seq = el.scanMode.value === 'sequential';
-    el.scanTarget.closest('.scan-lbl').style.display = seq ? 'none' : '';
+    // "into column" applies to record + new-row modes only.
+    const hideTarget = el.scanMode.value === 'sequential' || el.scanMode.value === 'fiber';
+    el.scanTarget.closest('.scan-lbl').style.display = hideTarget ? 'none' : '';
     scanSeqCol = 0;
+    if (el.scanMode.value === 'fiber') fiberScanRow = null; // restart at the first data row
   });
 
   el.btnAddCol.addEventListener('click', () => {
@@ -3005,10 +3254,62 @@
       selectedRows.clear();
       if (e.target.checked) dataRowIndices().forEach(i => selectedRows.add(i));
       renderDataTable();
+    } else if (e.target.classList.contains('fibcheck')) {
+      // Labeled / Ported toggle → write TRUE/FALSE, sync, and log who did it.
+      const r = +e.target.dataset.r, c = +e.target.dataset.c;
+      if (!rawRows[r]) return;
+      while (rawRows[r].length <= c) rawRows[r].push('');
+      const val = e.target.checked ? 'TRUE' : 'FALSE';
+      rawRows[r][c] = val;
+      el.rawCsv.value = csvSerialize(rawRows);
+      recomputeRecords();
+      const colName = columnNames()[c] || ('Col ' + (c + 1));
+      const idc = (fiber && fiber.cols.id >= 0 && rawRows[r][fiber.cols.id]) ? String(rawRows[r][fiber.cols.id]).trim() : '';
+      const rn = el.headerToggle.classList.contains('on') ? r : r + 1;
+      broadcastCellCommitDetail(r, c, val, `${e.target.checked ? 'checked ✓' : 'unchecked ✗'} ${colName} on R${rn}${idc ? ' (' + idc + ')' : ''}`);
+      // Toggling the A side may complete/clear the flash on the selected row.
+      if (fiber && fiberSelRow === r) renderDataTable();
     }
   });
 
-  // Render a port label: Port A on one face, Port B on the other, so each side
+  // Tap a row number (outside select/quote mode) to spotlight the whole row,
+  // its matching-serial partners, and flash their strand indexes.
+  el.dataTable.addEventListener('click', (e) => {
+    if (quoteMode || !fiber) return;
+    const rn = e.target.closest && e.target.closest('.rownum');
+    if (!rn || rn.dataset.rownum == null) return;
+    const r = +rn.dataset.rownum;
+    if (el.headerToggle.classList.contains('on') && r === 0) return; // header row
+    fiberSelRow = (fiberSelRow === r) ? null : r; // toggle off if re-tapped
+    renderDataTable();
+  });
+
+  // Auto-pull the fiber columns into printable labels (2 per row) and open the
+  // printer page. Line 1 = ID, line 2 = Chassis A + Port A, line 3 = Chassis Z + Port Z.
+  el.btnFiberLabels.addEventListener('click', () => {
+    if (!fiber) return;
+    const headerMode = el.headerToggle.classList.contains('on');
+    const labels = [];
+    rawRows.forEach((row, ri) => {
+      if (headerMode && ri === 0) return;
+      if (!row.some(c => c != null && String(c).trim() !== '')) return;
+      const txt = fiberLabelText(row);
+      if (txt) labels.push(txt.split('\n'));
+    });
+    if (!labels.length) { log('No fiber rows to build labels from.', 'warn'); return; }
+    records = labels;
+    recordRawMap = [];
+    recordIndex = 0;
+    el.copies.value = '2'; // two labels per row
+    if (!state.flag) { el.flagToggle.classList.add('on'); state.flag = true; }
+    if (!state.autoFit) { el.autoFitToggle.classList.add('on'); state.autoFit = true; }
+    updateRecordNav();
+    showRecord(0);
+    switchPage('printer');
+    log(`Loaded ${labels.length} fiber label(s) · 2 copies each. Review and Print all.`, 'ok');
+  });
+
+  // Render a port label: Port A on one face, Port Z on the other, so each side
   // of the folded flag shows its end. Canvas is the media; the two ports sit in
   // the two halves of the centered printable sticker (split at its perf).
   function renderPortLabel(canvas, dpi, portA, portB) {
@@ -3063,7 +3364,7 @@
     if (!idxs.length) { log('No rows checked.', 'warn'); return; }
     const aCol = Math.max(0, parseInt(el.portACol.value, 10) || 0);
     const bCol = Math.max(0, parseInt(el.portBCol.value, 10) || 0);
-    if (!window.confirm(`Print ${idxs.length} label(s) with Port A / Port B on each side?`)) return;
+    if (!window.confirm(`Print ${idxs.length} label(s) with Port A / Port Z on each side?`)) return;
     el.btnPrintSelected.disabled = true;
     const total = idxs.length;
     try {
@@ -3081,7 +3382,7 @@
         const img = await printCanvasToImage();
         const ok = await bradySdk.printBitmap(img, 0, 0);
         if (ok === false) throw new Error(`printBitmap failed on label ${k + 1}`);
-        log(`Printed A:${portA} / B:${portB} (${k + 1}/${total}).`, 'ok');
+        log(`Printed A:${portA} / Z:${portB} (${k + 1}/${total}).`, 'ok');
       }
       setStatus('Connected', 'ok');
       log(`Port label batch complete — ${total} label(s).`, 'ok');

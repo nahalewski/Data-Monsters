@@ -26,9 +26,14 @@ let weekKey = null;   // ISO date of the current week's Monday
 let lastReport = null; // { forWeek, generatedAt }
 let pinnedReport = null; // { forWeek, generatedAt, completed, notDone, commented }
 let editLog = [];     // [ { name, text, ts } ]  attributed edit history
+let cellMeta = {};    // { "r,c": { name, ts } }  who last edited each cell
+let lastChatClear = 0; // ts of the most recent 5pm boundary the chat was cleared for
 const CHAT_MAX = 300;
 const EDIT_MAX = 250;
 const CHAT_TTL_MS = 5 * 24 * 60 * 60 * 1000; // keep chat ~5 days (the work week)
+// The chat wipes every day once this hour passes (server-local time — set the
+// TZ env var in Render to your zone, e.g. TZ=America/New_York).
+const CHAT_CLEAR_HOUR = 17; // 5pm
 
 // Monday (as YYYY-MM-DD) of the week containing d.
 function weekKeyOf(d) {
@@ -42,6 +47,22 @@ function pruneChat() {
   const cutoff = Date.now() - CHAT_TTL_MS;
   chat = chat.filter(m => (m.ts || 0) >= cutoff).slice(-CHAT_MAX);
 }
+// The most recent 5pm (CHAT_CLEAR_HOUR) that has already passed.
+function chatClearBoundary(now) {
+  const b = new Date(now);
+  b.setHours(CHAT_CLEAR_HOUR, 0, 0, 0);
+  if (now.getTime() < b.getTime()) b.setDate(b.getDate() - 1);
+  return b.getTime();
+}
+// Wipe the chat once each day's 5pm boundary passes (idempotent per boundary).
+function maybeClearChat() {
+  const b = chatClearBoundary(new Date());
+  if (lastChatClear < b) {
+    lastChatClear = b;
+    if (chat.length) { chat.length = 0; if (typeof broadcast === 'function') broadcast({ type: 'chatCleared' }); }
+    persist();
+  }
+}
 
 try {
   if (fs.existsSync(STORE)) {
@@ -53,16 +74,21 @@ try {
     if (saved && saved.lastReport) lastReport = saved.lastReport;
     if (saved && saved.pinnedReport) pinnedReport = saved.pinnedReport;
     if (saved && Array.isArray(saved.editLog)) editLog = saved.editLog.slice(-EDIT_MAX);
+    if (saved && saved.cellMeta && typeof saved.cellMeta === 'object') cellMeta = saved.cellMeta;
+    if (saved && typeof saved.lastChatClear === 'number') lastChatClear = saved.lastChatClear;
   }
 } catch (e) { console.error('load store failed:', e.message); }
 if (!weekKey) weekKey = weekKeyOf(new Date());
+// Start the daily-clear cycle from the current boundary so a deploy doesn't
+// retroactively wipe today's chat; the next 5pm still clears it.
+if (!lastChatClear) lastChatClear = chatClearBoundary(new Date());
 pruneChat();
 
 let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat, weekKey, lastReport, pinnedReport, editLog }),
+    fs.writeFile(STORE, JSON.stringify({ rows: doc.rows, rev: doc.rev, comments, chat, weekKey, lastReport, pinnedReport, editLog, cellMeta, lastChatClear }),
       (e) => { if (e) console.error('persist failed:', e.message); });
   }, 500);
 }
@@ -214,7 +240,8 @@ wss.on('connection', (ws) => {
   ws._eid = 'e' + (++eidSeq);
   ws._editing = new Set();
   maybeRollWeek();
-  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, pinnedReport, editLog }));
+  maybeClearChat();
+  ws.send(JSON.stringify({ type: 'init', rows: doc.rows, rev: doc.rev, comments, chat, pinnedReport, editLog, cellMeta }));
   presence();
 
   ws.on('message', (raw) => {
@@ -230,7 +257,10 @@ wss.on('connection', (ws) => {
       while (doc.rows[r].length <= c) doc.rows[r].push('');
       doc.rows[r][c] = m.value == null ? '' : String(m.value);
       doc.rev++;
-      broadcast({ type: 'cell', r, c, value: doc.rows[r][c], rev: doc.rev }, ws);
+      // Record who last committed this cell (for quote attribution).
+      let by, at;
+      if (m.commit && m.name) { by = clip(m.name, 40); at = Date.now(); cellMeta[r + ',' + c] = { name: by, ts: at }; }
+      broadcast({ type: 'cell', r, c, value: doc.rows[r][c], rev: doc.rev, by, at }, ws);
       if (m.commit && m.name && m.detail) pushEdit(m.name, m.detail);
       persist();
     } else if (m.type === 'rows') {
@@ -254,7 +284,8 @@ wss.on('connection', (ws) => {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         name: clip(m.name, 40), text: clip(m.text, 1000), ts: Date.now(),
         quote: Array.isArray(m.quote) ? m.quote.slice(0, 60).map(q => ({
-          ref: clip(q.ref, 24), value: clip(q.value, 200),
+          ref: clip(q.ref, 48), value: clip(q.value, 200),
+          by: q.by ? clip(q.by, 40) : '', at: (typeof q.at === 'number' && q.at > 0) ? q.at : 0,
         })) : null,
         replyTo: (m.replyTo && typeof m.replyTo === 'object') ? {
           id: clip(m.replyTo.id, 40), name: clip(m.replyTo.name, 40), text: clip(m.replyTo.text, 140),
@@ -292,6 +323,9 @@ wss.on('connection', (ws) => {
 });
 
 maybeRollWeek();
-setInterval(maybeRollWeek, 60 * 60 * 1000); // hourly week-roll / chat prune check
+maybeClearChat();
+// Check the daily 5pm chat clear (and week roll) every minute so it fires
+// promptly even when no one is actively connected.
+setInterval(() => { maybeRollWeek(); maybeClearChat(); }, 60 * 1000);
 
 server.listen(PORT, () => console.log('L2 Fiber Tech-Hub (with live sync) on :' + PORT));

@@ -1,4 +1,4 @@
-// Minimal static server + WebSocket sync for the M511 Label Studio.
+// Minimal static server + WebSocket sync for the L2 Fiber Tech-Hub.
 // Serves label-app/ and keeps one shared CSV document that every connected
 // client edits in real time. No logins — whoever opens the page joins the doc.
 'use strict';
@@ -100,7 +100,7 @@ function analyzeSheet() {
 function buildReportCsv() {
   const { header, completed, notDone, commented } = analyzeSheet();
   const out = [];
-  out.push(csvRow(['M511 Label Studio — Weekly Report']));
+  out.push(csvRow(['L2 Fiber Tech-Hub — Weekly Report']));
   out.push(csvRow(['Generated', new Date().toISOString()]));
   if (lastReport) out.push(csvRow(['For week beginning (Mon)', lastReport.forWeek]));
   out.push('');
@@ -294,4 +294,4 @@ wss.on('connection', (ws) => {
 maybeRollWeek();
 setInterval(maybeRollWeek, 60 * 60 * 1000); // hourly week-roll / chat prune check
 
-server.listen(PORT, () => console.log('M511 Label Studio (with live sync) on :' + PORT));
+server.listen(PORT, () => console.log('L2 Fiber Tech-Hub (with live sync) on :' + PORT));

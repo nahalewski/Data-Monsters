@@ -718,13 +718,18 @@
   }
   .chat-reply .rname { color: #1a73e8; font-weight: 600; font-family: var(--sans); }
 
-  /* Quoted CSV data → blue card */
+  /* Quoted CSV data → blue card (one .qline per cell) */
   .chat-quote {
     border-left: 3px solid #1a73e8; background: #e8f0fe;
-    padding: 6px 10px; margin: 4px 0; border-radius: 4px;
+    padding: 7px 10px; margin: 4px 0; border-radius: 6px;
     font-family: var(--mono); font-size: 12px; color: #202124;
+    display: flex; flex-direction: column; gap: 6px;
   }
-  .chat-quote .qref { color: #1a73e8; font-weight: 700; }
+  .chat-quote .qline { display: flex; flex-direction: column; gap: 1px; }
+  .chat-quote .qline + .qline { border-top: 1px solid #d2e3fc; padding-top: 6px; }
+  .chat-quote .qref { color: #1a73e8; font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; }
+  .chat-quote .qval { color: #202124; font-weight: 600; word-break: break-word; }
+  .chat-quote .qmeta { color: #5f6368; font-size: 10.5px; font-family: var(--sans); font-style: italic; }
 
   /* Composer */
   .chat-input-row {
@@ -1901,6 +1906,7 @@
   let selectedRows = new Set(); // rawRows indices checked for port printing
   let portsAutoSet = false;     // have we auto-detected Port A/B columns yet
   let comments = {};            // { "r,c": [ {name,text,ts} ] } shared cell comments
+  let cellMeta = {};            // { "r,c": {name,ts} } who last edited each cell
   let quoteMode = false;        // select-cells-to-quote mode
   let quoteCells = new Set();   // "r,c" keys selected for quoting
   let dirtyCells = new Set();   // cells edited since focus (committed on blur)
@@ -2394,7 +2400,7 @@
       for (let c = 0; c < cols; c++) {
         const v = (rawRows[r] && rawRows[r][c] != null) ? String(rawRows[r][c]) : '';
         if (v === '') continue; // skip empty cells to keep the quote compact
-        q.push({ ref: `${names[c] || 'C' + (c + 1)} · R${headerMode ? r : r + 1}`, value: v });
+        q.push({ ref: `${names[c] || 'C' + (c + 1)} · R${headerMode ? r : r + 1}`, value: v, ...quoteMetaFor(r, c) });
       }
     });
     if (!q.length) return;
@@ -2532,20 +2538,23 @@
   el.btnExportCsv.addEventListener('click', exportCsv);
 
   // Weekly report: completed / not-completed / commented sections (built server-side).
+  // Restricted to the designated manager.
   async function downloadReport() {
+    if (!canManage()) { log('Report isn’t available for this account.', 'warn'); return; }
     try {
       const res = await fetch('/report.csv', { cache: 'no-store' });
       if (!res.ok) throw new Error('server ' + res.status);
-      saveTextFile('m511-weekly-report.csv', await res.text());
+      saveTextFile('mrn-report.csv', await res.text());
     } catch (e) {
       log('Report unavailable (needs the live server): ' + (e.message || e), 'warn');
     }
   }
   el.btnReport.addEventListener('click', downloadReport);
 
-  // Pinned weekly report card at the top of the chat.
+  // Pinned weekly report card at the top of the chat (manager only).
   function renderPinned(pin) {
-    if (!pin) { el.chatPinned.style.display = 'none'; return; }
+    lastPinned = pin || null;
+    if (!pin || !canManage()) { el.chatPinned.style.display = 'none'; return; }
     el.chatPinned.style.display = '';
     el.chatPinned.innerHTML =
       `<div class="pin-head">📌 Weekly report · week of ${escapeHtml(pin.forWeek || '')}</div>
@@ -2574,10 +2583,12 @@
   function broadcastCell(r, c, value) { wsSend({ type: 'cell', r, c, value }); }
   // Commit: sent once when a cell edit finishes (on blur) → logs + toasts.
   function broadcastCellCommit(r, c, value) {
+    cellMeta[r + ',' + c] = { name: myName(), ts: Date.now() };
     wsSend({ type: 'cell', r, c, value, name: myName(), detail: editDetail(r, c, value), commit: true });
   }
   // Commit with a caller-supplied log line (checkbox toggles, serial scans, …).
   function broadcastCellCommitDetail(r, c, value, detail) {
+    cellMeta[r + ',' + c] = { name: myName(), ts: Date.now() };
     wsSend({ type: 'cell', r, c, value, name: myName(), detail, commit: true });
   }
 
@@ -2646,6 +2657,12 @@
         if (!identity || m.message.name !== identity.name) showToast(m.message.name, m.message.text || '(quoted cells)');
         return;
       }
+      if (m.type === 'chatCleared') {
+        // Daily 5pm wipe — start fresh.
+        chatMessages = [];
+        renderChat();
+        return;
+      }
       if (m.type === 'comment') {
         const key = (m.r | 0) + ',' + (m.c | 0);
         (comments[key] = comments[key] || []).push(m.comment);
@@ -2673,6 +2690,7 @@
           comments = m.comments || {};
           chatMessages = Array.isArray(m.chat) ? m.chat : [];
           editEntries = Array.isArray(m.editLog) ? m.editLog : [];
+          cellMeta = (m.cellMeta && typeof m.cellMeta === 'object') ? m.cellMeta : {};
           renderChat();
           renderPinned(m.pinnedReport);
           renderEditLog();
@@ -2681,6 +2699,7 @@
           if (cellIsFocused()) pendingDoc = m.rows;   // don't yank the row you're editing
           else applyRemoteRows(m.rows);
         } else if (m.type === 'cell') {
+          if (m.by) cellMeta[(m.r | 0) + ',' + (m.c | 0)] = { name: m.by, ts: m.at || Date.now() };
           applyRemoteCell(m.r | 0, m.c | 0, m.value == null ? '' : String(m.value));
         }
       } finally { applyingRemote = false; }
@@ -2805,6 +2824,11 @@
     try { return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
     catch (_) { return ''; }
   }
+  // "Jul 21, 2026, 3:04 PM" — used for quote attribution.
+  function fmtDateTime(ts) {
+    try { return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+    catch (_) { return ''; }
+  }
   function refreshRenameUI() {
     if (!identity) { el.chatRename.style.display = 'none'; return; }
     el.chatRename.style.display = '';
@@ -2819,12 +2843,25 @@
       el.renameNote.textContent = `Name changes are limited to once a week — next change available ${fmtDate(renameAllowedAt())}.`;
     }
   }
+  // ---- Restricted actions (report + edit log): one designated user only ----
+  function normName(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+  function canManage() { return !!identity && normName(identity.name) === 'ben n.'; }
+  // Show/hide the report button, edit log, and pinned report for non-managers.
+  function applyManageUI() {
+    const ok = canManage();
+    if (el.btnReport) el.btnReport.style.display = ok ? '' : 'none';
+    const eld = document.getElementById('editLogDetails');
+    if (eld) eld.style.display = ok ? '' : 'none';
+    renderPinned(lastPinned); // re-render so its download button follows access
+  }
+  let lastPinned = null; // remember the last pinned report to re-render on identity change
   function refreshIdentityUI() {
     const has = !!identity;
     el.chatNameGate.style.display = has ? 'none' : '';
     el.chatInputRow.style.display = has ? '' : 'none';
     if (has) el.chatMe.textContent = identity.name;
     refreshRenameUI();
+    applyManageUI();
   }
   el.btnRenameToggle.addEventListener('click', () => {
     if (!canRenameNow()) return;
@@ -2987,6 +3024,11 @@
     else { setCellQuoted(r, c, !quoteCells.has(commentKey(r, c))); updateQuoteBar(); }
   });
   el.btnQuoteClear.addEventListener('click', () => { quoteCells.clear(); renderDataTable(); updateQuoteBar(); });
+  // Last-editor stamp for a cell (for quote attribution).
+  function quoteMetaFor(r, c) {
+    const meta = cellMeta[r + ',' + c];
+    return meta ? { by: meta.name || '', at: meta.ts || 0 } : { by: '', at: 0 };
+  }
   el.btnQuoteInChat.addEventListener('click', () => {
     if (!quoteCells.size) return;
     const headerMode = el.headerToggle.classList.contains('on');
@@ -2995,6 +3037,7 @@
     pendingQuote = keys.map(([r, c]) => ({
       ref: `${names[c] || 'C' + (c + 1)} · R${headerMode ? r : r + 1}`,
       value: (rawRows[r] && rawRows[r][c] != null) ? String(rawRows[r][c]) : '',
+      ...quoteMetaFor(r, c),
     }));
     // Deselect after quoting so the selection doesn't linger.
     quoteCells.clear(); renderDataTable(); updateQuoteBar();
@@ -3033,7 +3076,12 @@
       const mine = identity && m.name === identity.name;
       const name = m.name || 'Someone';
       const q = (m.quote && m.quote.length)
-        ? `<div class="chat-quote">` + m.quote.map(x => `<div><span class="qref">${escapeHtml(x.ref)}:</span> ${escapeHtml(x.value)}</div>`).join('') + `</div>`
+        ? `<div class="chat-quote">` + m.quote.map(x => {
+            const meta = (x.by || x.at)
+              ? `<div class="qmeta">— ${escapeHtml(x.by || 'unknown')}${x.at ? ' · ' + escapeHtml(fmtDateTime(x.at)) : ''}</div>`
+              : '';
+            return `<div class="qline"><span class="qref">${escapeHtml(x.ref)}</span><span class="qval">${escapeHtml(x.value)}</span>${meta}</div>`;
+          }).join('') + `</div>`
         : '';
       const reply = (m.replyTo && (m.replyTo.name || m.replyTo.text))
         ? `<div class="chat-reply"><span class="rname">${escapeHtml(m.replyTo.name || 'Someone')}</span> ${escapeHtml(m.replyTo.text || '(quoted cells)')}</div>`

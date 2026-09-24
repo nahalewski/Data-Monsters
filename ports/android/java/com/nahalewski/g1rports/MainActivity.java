@@ -87,21 +87,23 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
     applyLayout();
   }
 
-  /** Without a hinge sensor the display tells: the cover screen of a
-   *  foldable is phone-sized (under 600 dp on its short side), the inner
-   *  screen tablet-sized.  Reported as a hinge angle (0 closed, 180 open). */
+  /** The fold state the shell sees, as a hinge angle (0 closed, 180 open).
+   *  The cover screen of a foldable is phone-sized (under 600 dp on its
+   *  short side) and only lit while the phone is closed, so it counts as
+   *  closed whatever the sensor says; on the inner screen the hinge sensor
+   *  decides, and open is assumed until it reports. */
   private void reportFoldState() {
-    if (hinge != null) return;
     int sw = getResources().getConfiguration().smallestScreenWidthDp;
-    nativeSetHinge(sw > 0 && sw < 600 ? 0f : 180f);
+    boolean cover = sw > 0 && sw < 600;
+    float angle = cover ? 0f : (lastHinge >= 0 ? lastHinge : 180f);
+    nativeSetHinge(angle);
   }
 
   @Override
   public void onSensorChanged(SensorEvent e) {
     if (e.sensor.getType() == Sensor.TYPE_HINGE_ANGLE) {
       float a = e.values[0];
-      nativeSetHinge(a);
-      if (lastHinge < 0 || Math.abs(a - lastHinge) > 5) { lastHinge = a; applyLayout(); }
+      if (lastHinge < 0 || Math.abs(a - lastHinge) > 5) { lastHinge = a; reportFoldState(); applyLayout(); }
     }
   }
 

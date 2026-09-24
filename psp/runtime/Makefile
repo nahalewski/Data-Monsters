@@ -46,7 +46,7 @@ $(B)/boot_lua.h: lua/boot.lua tools/bin2c.py
 
 src/main.o: $(B)/boot_lua.h
 $(RT_SRC:.c=.o): $(wildcard src/*.h)
-$(LUA_SRC:.c=.o): CFLAGS += -w
+$(LUA_SRC:.c=.o): CFLAGS += -w -O3
 
 .PHONY: clean-all
 clean-all: clean

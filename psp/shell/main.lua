@@ -168,7 +168,9 @@ end
 local SCALING = { "none", "fit", "stretch" }
 local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", stretch = "WIDESCREEN (16:9)" }
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
-local Options = { scaling = "fit", smooth = true, swapAB = false, audioRate = "22050", music = true }
+-- Music defaults to off: the engine synthesizes it sample by sample in Lua,
+-- which measured at ~370 us per sample on the PSP (hundreds of ms a frame).
+local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = false }
 
 local function saveOptions()
   local parts = {}
@@ -227,7 +229,7 @@ local OPTION_ROWS = {
     function() Options.smooth = not Options.smooth end },
   { "Confirm button", function() return Options.swapAB and "CIRCLE = A, CROSS = B" or "CROSS = A, CIRCLE = B" end,
     function() Options.swapAB = not Options.swapAB end },
-  { "Music", function() return Options.music and "ON" or "OFF (faster: the chip synth runs in Lua)" end,
+  { "Music", function() return Options.music and "ON (very slow on PSP: Lua synth)" or "OFF (recommended on PSP)" end,
     function() Options.music = not Options.music end },
   { "Music sample rate", function() return Options.audioRate .. " Hz (applies on next launch)" end,
     function(d) Options.audioRate = cycle(RATES, Options.audioRate, d == 0 and 1 or d) end },
@@ -369,6 +371,11 @@ local function bootGame(version)
       end
     end
     wrap(require("src.core.FixedStep"), "update", "fixedstep")
+    wrap(require("src.core.StateStack"), "update", "stack_update")
+    wrap(require("src.core.Input"), "step", "input_step")
+    wrap(require("src.mods.Runtime"), "call", "mod_call")
+    wrap(require("src.render.Renderer"), "beginFrame", "r_begin")
+    wrap(require("src.render.Renderer"), "endFrame", "r_end")
     wrap(require("src.core.Music"), "update", "music")
     wrap(require("src.core.ChipSynth"), "soundData", "synth")
     wrap(require("src.render.Tilt"), "update", "tilt")

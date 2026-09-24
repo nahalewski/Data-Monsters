@@ -297,9 +297,31 @@ local swapAB = false
 local quitSent = false
 local DEADZONE = 0.3
 
+-- LOVEPSP_INPUT (env.txt): scripted presses "frame:button:frames,..." with
+-- button in up/down/left/right/cross/circle/square/triangle/l/r/start/select,
+-- merged into the real pad so a console or emulator run can be driven
+local scriptHolds, scriptFrame = nil, 0
+local function loadInputScript()
+  local spec = ENV.LOVEPSP_INPUT
+  if not spec then return end
+  scriptHolds = {}
+  local names = { up = B.up, down = B.down, left = B.left, right = B.right, cross = B.cross,
+    circle = B.circle, square = B.square, triangle = B.triangle, l = B.l, r = B.r,
+    start = B.start, select = B.select }
+  for f, name, n in spec:gmatch("(%d+):(%a+):(%d+)") do
+    if names[name] then scriptHolds[#scriptHolds + 1] = { from = tonumber(f), len = tonumber(n), bit = names[name] } end
+  end
+end
+
 local rawPrev = 0
 local function pumpInput()
   local buttons, ax, ay, quit = core.poll()
+  if scriptHolds then
+    scriptFrame = scriptFrame + 1
+    for _, h in ipairs(scriptHolds) do
+      if scriptFrame >= h.from and scriptFrame < h.from + h.len then buttons = buttons | h.bit end
+    end
+  end
   if quit and not quitSent then
     quitSent = true
     love.event.push("quit", 0)
@@ -829,6 +851,7 @@ local function boot()
   if c.identity then love.filesystem.setIdentity(c.identity) end
   loadEnvText(love.filesystem.read("env.txt") or envText)
   swapAB = ENV.LOVEPSP_SWAP_AB == "1"
+  loadInputScript()
   do
     local saved = love.filesystem.read("lovepsp_scaling.txt")
     local mode = ENV.LOVEPSP_SCALING or saved or "fit"

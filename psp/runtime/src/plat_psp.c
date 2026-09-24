@@ -83,13 +83,20 @@ void plat_shutdown(void) {
   sceKernelExitGame();
 }
 
+static SceInt64 g_last_present;
+
 void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
   uint32_t *fb = g_fb[g_back];
+  SceInt64 now;
   plat_blit_scaled(px, w, h, fb, FB_STRIDE, 480, 272, mode, smooth);
   sceKernelDcacheWritebackRange(fb, FB_STRIDE * 272 * 4);
-  sceDisplayWaitVblankStart();
+  /* a fast frame waits for vblank (60 Hz cap); a slow one flips at the next
+   * vblank without waiting, so it does not lose up to a whole extra vblank */
+  now = sceKernelGetSystemTimeWide();
+  if (now - g_last_present < 15000) sceDisplayWaitVblankStart();
   sceDisplaySetFrameBuf((void *)fb, FB_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
-                        PSP_DISPLAY_SETBUF_IMMEDIATE);
+                        PSP_DISPLAY_SETBUF_NEXTFRAME);
+  g_last_present = sceKernelGetSystemTimeWide();
   g_back ^= 1;
 }
 

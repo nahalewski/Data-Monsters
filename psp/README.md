@@ -21,10 +21,13 @@ EBOOT's `DATA.PSAR`.
 2. Put your own canonical US cartridge dump of Pokemon Red, Blue or Yellow
    into `PSP/GAME/gen1recomp/roms/` (`.gb`). Only the ROMs whose SHA-1 the
    engine accepts are recognised; no game data ships with the port.
-3. Launch **gen1recomp for PSP** from the XMB, pick the game and press
-   **X** to import. The import decodes the ROM into the engine's private
-   cache under `save/pokemon-love2d/<version>/`; it happens once per game
-   and takes a while on the PSP. Then press **X** again to play.
+3. Launch **gen1recomp for PSP** from the XMB. The launcher shows one
+   cartridge card per game: move between them with the D-pad or nub and
+   press **X** to import (once per game — it decodes the ROM into the
+   engine's private cache under `save/pokemon-love2d/<version>/`, which
+   takes a while on the PSP), then **X** again to play. **Triangle** opens
+   the options page (screen scaling, smoothing, confirm button, music
+   sample rate, delete imported data); **Square** rescans `roms/`.
 
 Saves live in `PSP/GAME/gen1recomp/save/pokemon-love2d/`, in the same layout
 as the desktop build.
@@ -38,11 +41,19 @@ as the desktop build.
 | B | Circle |
 | Start | Start |
 | Select | Select |
-| screen scaling | Triangle (launcher), Select + L (in game) |
+| screen scaling | options page, or Select + L in game |
 
-Set `LOVEPSP_SWAP_AB=1` in `save/pokemon-love2d/env.txt` to put A on Circle.
-The same file overrides the engine's `POKEPORT_*` settings
-(`POKEPORT_AUDIO_RATE=11025` if music stutters).
+The options page persists to `save/pokemon-love2d/psp_options.lua`.
+`save/pokemon-love2d/env.txt` (KEY=VALUE lines) overrides the engine's
+`POKEPORT_*` settings and the port's own:
+
+- `LOVEPSP_GAMES=red,blue,yellow,firered` — which cards to offer. Only Gen 1
+  fits the PSP: FireRed imports and boots under this runtime on a desktop,
+  but its Lua heap is ~81 MB after loading (Blue: 8.7 MB) on top of a
+  141 MB cache, more than the console's 32/64 MB of RAM.
+- `LOVEPSP_AUTOIMPORT=blue` — start that import at boot (for emulator runs
+  without input injection). `autoboot.txt` containing a version name boots
+  it directly.
 
 Screen scaling modes: `fit` (default, aspect-correct 3:2 letterbox), `stretch`,
 `integer` (1x, tiny) and `none`.
@@ -79,8 +90,10 @@ bash psp/build.sh --host-only                          # just game.pak, for the 
 
 `build.sh` clones upstream `main` (override with `--ref` or
 `--upstream DIR`). The upstream launcher files listed in its LICENSE term 2
-are proprietary and excluded; `shell/main.lua` is this port's own front end
-and carries the credit the licence requires.
+are proprietary ("may not be copied, modified, redistributed, or used in any
+fork"), so they are excluded and cannot be added back; `shell/main.lua` is
+this port's own controller-driven front end and carries the credit the
+licence requires.
 
 ### Testing without a PSP
 

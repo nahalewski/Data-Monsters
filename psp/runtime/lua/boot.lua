@@ -28,6 +28,36 @@ unpack = unpack or table.unpack
 loadstring = loadstring or load
 math.pow = math.pow or function(a, b) return a ^ b end
 
+-- setfenv/getfenv for Lua functions, via their _ENV upvalue (the engine
+-- sandboxes data chunks with setfenv(f, {}))
+if not setfenv then
+  local function envIndex(f)
+    local i = 1
+    while true do
+      local name = debug.getupvalue(f, i)
+      if name == "_ENV" then return i elseif not name then return nil end
+      i = i + 1
+    end
+  end
+  function setfenv(f, env)
+    if type(f) == "number" then f = debug.getinfo(f + 1, "f").func end
+    local i = envIndex(f)
+    if i then
+      debug.upvaluejoin(f, i, function() return env end, 1)
+    end
+    return f
+  end
+  function getfenv(f)
+    if type(f) == "number" then f = debug.getinfo((f or 1) + 1, "f").func end
+    local i = f and envIndex(f)
+    if i then
+      local _, v = debug.getupvalue(f, i)
+      return v
+    end
+    return _G
+  end
+end
+
 -- LuaJIT's string.format("%d", 2.5) truncates; Lua 5.4 raises "number has
 -- no integer representation".  The engine was written against LuaJIT, so
 -- retry with floored arguments when that is what went wrong.
@@ -618,6 +648,20 @@ do
   love.window = window
   package.loaded["love.window"] = window
 end
+
+-- runtime hooks for the shell's options page
+love.lovepsp = {
+  setSwapAB = function(v) swapAB = not not v end,
+  getSwapAB = function() return swapAB end,
+  setScaling = function(mode, smooth)
+    love.graphics._setPresentScaling(mode, smooth)
+  end,
+  getScaling = love.graphics._getPresentScaling,
+  memory = core.memory,
+  power = core.power,
+  log = core.log,
+  env = ENV,
+}
 
 -- love.thread is deliberately absent: gen1recomp falls back to synchronous
 -- music synthesis and ROM extraction when it is missing.

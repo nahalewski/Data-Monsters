@@ -320,11 +320,15 @@ local OPTION_ROWS = {
       Options.layout = lovepsp.layout() == "ds" and "single" or "ds"
     end },
   { "DS skin", function()
+      if love._os ~= "Android" then return "Android foldables only" end
       local names = { gbc = "3DS, G1R sticker, GBC border", sticker = "3DS, G1R sticker", plain = "3DS plain",
                       small = "3DS small screen", off = "OFF" }
-      return (names[Options.skin] or Options.skin) .. " (DS layout)"
+      return (names[Options.skin] or Options.skin) .. " (folded DS layout)"
     end,
-    function(d) Options.skin = cycle({ "gbc", "sticker", "plain", "small", "off" }, Options.skin, d == 0 and 1 or d) end },
+    function(d)
+      if love._os ~= "Android" then return end
+      Options.skin = cycle({ "gbc", "sticker", "plain", "small", "off" }, Options.skin, d == 0 and 1 or d)
+    end },
   { "On-screen pad", function()
       if love._os == "PSP" or not lovepsp.touchPad then return "n/a" end
       return lovepsp.touchPad() and "ON (drawn D-pad, A, B)" or "OFF (real buttons)"

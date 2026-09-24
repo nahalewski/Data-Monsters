@@ -5,7 +5,8 @@
 #   ANDROID_SDK=/path/to/sdk ANDROID_NDK=/path/to/ndk SDL_DIR=/path/to/SDL-2.30 bash build.sh [build.sh args]
 #
 # Output: dist/android/gen1recomp.apk (debug-signed).  ROMs go to
-# /sdcard/Android/data/com.nahalewski.gen1recomp/files/ (or roms/ under it).
+# /sdcard/Android/data/com.nahalewski.g1rports/files/ (or roms/ under it).
+# Its own package name, so it never replaces or updates the official app.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."

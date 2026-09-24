@@ -1,4 +1,4 @@
-package com.nahalewski.gen1recomp;
+package com.nahalewski.g1rports;
 
 import android.content.Context;
 import android.content.res.Configuration;

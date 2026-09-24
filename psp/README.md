@@ -154,7 +154,8 @@ row at the bottom of the MODS panel shows this in the app:
 | Select + R / Select + L | screen mode |
 
 On the Vita the drawn on-screen D-pad/A/B is off (the console has real
-buttons); taps on panel rows still work. The "On-screen pad" option turns
+buttons); taps on panel rows still work. Text that does not fit a side
+panel row scrolls sideways (marquee) on the highlighted row. The "On-screen pad" option turns
 it on, and Android has it on by default.
 
 ### Screen layouts
@@ -166,10 +167,13 @@ panel takes the whole bottom half). The Android app also has a **dual**
 mode in which the main display shows only the game and a second display
 shows the bottom half.
 
-In the DS layout a **3DS skin** (`shell/assets/skin3ds`, art supplied by
-the port's author) frames both halves: the game sits in the top screen,
-the panels in the bottom screen, and the frame's own D-pad, circle pad,
-A/B/X/Y, START, SELECT and HOME (opens the MENU) are the touch controls.
+On Android foldables only (the DS layout the hinge sensor selects) a
+**3DS skin** (`shell/assets/skin3ds`, art supplied by the port's author)
+frames both halves: the game sits in the top screen, the panels in the
+bottom screen, and the button sprites drawn into the bottom shell's
+sockets (D-pad, circle pad, A/B/X/Y, START, SELECT, HOME opening the MENU)
+are the touch controls; a pressed one is drawn darker and nudged. The
+Vita and the PS3 never show the skin.
 "DS skin" on the options page picks the top frame: **G1R sticker with the
 Game Boy Color border** (default), the plain sticker frame, a plain frame,
 a small-screen frame, or OFF for the bare layout.
@@ -199,11 +203,13 @@ reopens its audio device when the app regains focus.
 
 ### Android
 
+The app is its own package, `com.nahalewski.g1rports` ("G1R Ports"), so
+installing it never touches or updates the official gen1recomp app.
 `ports/android/build.sh` builds `dist/android/gen1recomp.apk` with the
 Android SDK's own tools (aapt2, d8, apksigner; no Gradle) from the same
 runtime under SDL2 (`SDL_DIR` points at an SDL 2.30 checkout, `ANDROID_SDK`
 and `ANDROID_NDK` at the SDK and NDK r26). ROMs go in
-`/sdcard/Android/data/com.nahalewski.gen1recomp/files/` (or `roms/` under
+`/sdcard/Android/data/com.nahalewski.g1rports/files/` (or `roms/` under
 it); saves and the mod folder live under it too. The activity
 (`ports/android/java`) decides the layout: a second display (dual-screen
 phones, an external screen) gets the bottom half through a Presentation

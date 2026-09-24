@@ -154,7 +154,7 @@ int plat_init(int argc, char **argv) {
   scePowerSetGpuClockFrequency(222);
 #elif defined(__ANDROID__)
   {
-    /* the app's external files dir: /sdcard/Android/data/<package>/files/
+    /* the app's external files dir: /sdcard/Android/data/com.nahalewski.g1rports/files/
      * (ROMs go there, or in roms/ under it); game.pak is copied out of the
      * APK's assets once, so the C side can read it with stdio */
     const char *ext = SDL_AndroidGetExternalStoragePath();
@@ -501,8 +501,11 @@ const char *plat_self_path(void) { return g_self; }
 const char *plat_os_name(void) { return "Vita"; }
 #elif defined(__PSL1GHT__)
 const char *plat_os_name(void) { return "PS3"; }
+#elif defined(__ANDROID__)
+const char *plat_os_name(void) { return "Android"; }
 #else
-const char *plat_os_name(void) { return "PSP"; }
+/* desktop test build: LOVEPSP_OS=Android|Vita pretends to be that console */
+const char *plat_os_name(void) { const char *o = getenv("LOVEPSP_OS"); return o && *o ? o : "PSP"; }
 #endif
 
 static void sdl_audio(void *ud, Uint8 *stream, int len) {
@@ -548,15 +551,15 @@ void plat_debug(const char *fmt, ...) {
 
 #ifdef __ANDROID__
 /* called from MainActivity / SecondScreen (Java) */
-JNIEXPORT void JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeSetLayout(JNIEnv *env, jclass cls, jint mode) {
+JNIEXPORT void JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeSetLayout(JNIEnv *env, jclass cls, jint mode) {
   (void)env; (void)cls;
   plat_set_layout(mode);
 }
-JNIEXPORT void JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeSetTouch(JNIEnv *env, jclass cls, jint on) {
+JNIEXPORT void JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeSetTouch(JNIEnv *env, jclass cls, jint on) {
   (void)env; (void)cls;
   touch_set_enabled(on);
 }
-JNIEXPORT jboolean JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeGetBottomScreen(JNIEnv *env, jclass cls, jintArray arr, jint w, jint h) {
+JNIEXPORT jboolean JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeGetBottomScreen(JNIEnv *env, jclass cls, jintArray arr, jint w, jint h) {
   jint *p;
   int ok;
   (void)cls;
@@ -567,7 +570,7 @@ JNIEXPORT jboolean JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeGet
   (*env)->ReleaseIntArrayElements(env, arr, p, 0);
   return ok ? JNI_TRUE : JNI_FALSE;
 }
-JNIEXPORT void JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeTouch(JNIEnv *env, jclass cls, jint id, jint down, jfloat lx, jfloat ly) {
+JNIEXPORT void JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeTouch(JNIEnv *env, jclass cls, jint id, jint down, jfloat lx, jfloat ly) {
   (void)env; (void)cls;
   touch_finger(id, down, lx, ly);
 }

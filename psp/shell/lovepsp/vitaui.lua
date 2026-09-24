@@ -69,18 +69,24 @@ local SKIN_TOP = {
   plain = { file = "top_plain.png", cut = { 126, 156, 471, 267 } },
   small = { file = "top_small.png", cut = { 222, 170, 281, 239 } },
 }
+-- bottom shell without buttons (bottom_empty.png) plus the button sprites
+-- cut from the sheet (buttons.png, half size): each sprite is drawn into its
+-- socket and pressed ones are drawn darker and nudged, like a real press.
+-- cut = the screen area; sockets in half-size source pixels of the shell.
 local SKIN_BOTTOM = {
-  file = "bottom.png", cut = { 176, 132, 373, 277 },
-  buttons = { -- centre / half size in source pixels of bottom.png
-    { name = "pad", x = 82, y = 320, r = 48, kind = "dpad" },
-    { name = "stick", x = 82, y = 205, r = 50, kind = "dpad" },
-    { name = "a", x = 677, y = 231, r = 24, bits = "cross" },
-    { name = "b", x = 640, y = 270, r = 24, bits = "circle" },
-    { name = "x", x = 640, y = 194, r = 24, bits = "cross" },
-    { name = "y", x = 602, y = 231, r = 24, bits = "circle" },
-    { name = "start", x = 609, y = 350, r = 18, bits = "start" },
-    { name = "select", x = 609, y = 391, r = 18, bits = "select" },
-    { name = "home", x = 362, y = 447, r = 34, kind = "menu" },
+  file = "bottom_empty.png", cut = { 173, 150, 378, 252 },
+  sheet = "buttons.png",
+  buttons = {
+    -- name, socket centre x/y, socket radius (hit + draw size), sprite rect in the sheet, kind or pad bits
+    { name = "stick", x = 82, y = 205, r = 50, sprite = { 270, 228, 181, 182 }, kind = "dpad" },
+    { name = "pad", x = 82, y = 320, r = 48, sprite = { 37, 228, 184, 186 }, kind = "dpad" },
+    { name = "x", x = 634, y = 197, r = 21, sprite = { 381, 57, 133, 134 }, bits = "cross" },
+    { name = "y", x = 597, y = 235, r = 21, sprite = { 560, 58, 133, 133 }, bits = "circle" },
+    { name = "a", x = 670, y = 235, r = 21, sprite = { 35, 58, 132, 133 }, bits = "cross" },
+    { name = "b", x = 634, y = 272, r = 21, sprite = { 209, 58, 132, 133 }, bits = "circle" },
+    { name = "start", x = 600, y = 342, r = 14, sprite = { 515, 256, 62, 62 }, bits = "start" },
+    { name = "select", x = 600, y = 387, r = 14, sprite = { 515, 340, 62, 63 }, bits = "select" },
+    { name = "home", x = 356, y = 436, r = 25, sprite = { 288, 427, 144, 86 }, kind = "menu", wide = true },
   },
 }
 local skinImages = {}
@@ -599,21 +605,28 @@ local function drawSkinFrames()
     love.graphics.draw(img, ox, -state.base, 0, sc, sc)
   end
   img = skinImage(SKIN_BOTTOM.file)
+  local sheet = skinImage(SKIN_BOTTOM.sheet)
   if img then
     local ox, sc = framePlacement(img)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(img, ox, 0, 0, sc, sc)
-    -- pressed highlights
+    if not sheet then return end
+    local sw, sh = sheet:getDimensions()
     local B = lovepsp.buttonBits
     for _, b in ipairs(SKIN_BOTTOM.buttons) do
       local lit = false
       if b.kind == "dpad" then lit = state.held & (B.up | B.down | B.left | B.right) ~= 0
       elseif b.kind == "menu" then lit = state.homeDown
       else lit = state.held & (B[b.bits] or 0) ~= 0 end
-      if lit then
-        love.graphics.setColor(1, 1, 1, 0.35)
-        love.graphics.circle("fill", ox + b.x * sc, b.y * sc, b.r * sc)
-      end
+      b.quad = b.quad or love.graphics.newQuad(b.sprite[1], b.sprite[2], b.sprite[3], b.sprite[4], sw, sh)
+      -- the sprite fills the socket: width 2r (a pill keeps its aspect)
+      local target = b.r * 2 * sc * (b.kind == "dpad" and 1.0 or 1.0)
+      local qw, qh = b.sprite[3], b.sprite[4]
+      local scale = (b.wide and (target * 2 / qw)) or (target / math.max(qw, qh))
+      local cx, cy = ox + b.x * sc, b.y * sc
+      local nudge = lit and 1.5 or 0
+      if lit then love.graphics.setColor(0.72, 0.72, 0.75, 1) else love.graphics.setColor(1, 1, 1, 1) end
+      love.graphics.draw(sheet, b.quad, cx - qw * scale / 2, cy - qh * scale / 2 + nudge, 0, scale, scale)
     end
   end
 end
@@ -636,6 +649,29 @@ local function applyGameRect()
 end
 
 ---------------------------------------------------------------- drawing
+
+-- text clipped to a width; when it does not fit and the row is active it
+-- scrolls sideways (marquee) so long mod names stay readable in a side panel
+local function marquee(text, x, y, width, active)
+  text = tostring(text)
+  local f = love.graphics.getFont()
+  local tw = f:getWidth(text)
+  if tw <= width then
+    love.graphics.print(text, x, y)
+    return
+  end
+  local sx, sy = x, y + state.base + state.panelY + (state.clipDy or 0)
+  love.graphics.setScissor(sx, sy, width, f:getHeight() + 2)
+  if active then
+    local gap = 24
+    local off = (love.timer.getTime() * 35) % (tw + gap)
+    love.graphics.print(text, x - off, y)
+    love.graphics.print(text, x - off + tw + gap, y)
+  else
+    love.graphics.print(text, x, y)
+  end
+  love.graphics.setScissor()
+end
 
 local function circle(x, y, label)
   love.graphics.setColor(0, 0, 0, 0.45)
@@ -679,7 +715,7 @@ local function drawRows(x, w, rows, scroll, cursor, selectedFn)
       love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
       love.graphics.rectangle("line", x + 6, y - 2, w - 12, ROW_H - 4, 4, 4)
     end
-    if selectedFn then selectedFn(row, x, y, w) end
+    if selectedFn then selectedFn(row, x, y, w, i) end
     y = y + ROW_H
   end
 end
@@ -688,13 +724,13 @@ local function drawRight()
   local x, w = panelRect("right")
   if state.rightPage == "options" then
     panel(x, w, "OPTIONS")
-    drawRows(x, w, buildOptionRows(), state.rightScroll, state.rightCursor, function(row, rx, ry, rw)
+    drawRows(x, w, buildOptionRows(), state.rightScroll, state.rightCursor, function(row, rx, ry, rw, rowIndex)
       love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.print(row.label, rx + 10, ry)
+      marquee(row.label, rx + 10, ry, rw - 20, false)
       if row.value then
         love.graphics.setColor(0.6, 0.85, 1, 1)
         love.graphics.setFont(font(9))
-        love.graphics.print(tostring(row.value()):sub(1, state.ds and 60 or 26), rx + 10, ry + 11)
+        marquee(row.value(), rx + 10, ry + 11, rw - 20, state.rightCursor == rowIndex)
         love.graphics.setFont(font(11))
       end
     end)
@@ -715,9 +751,9 @@ local function drawRight()
     love.graphics.printf("NO", x + w / 2 + 5, 129, w / 2 - 15, "center")
   else
     panel(x, w, "MENU")
-    drawRows(x, w, state.rows, state.rightScroll, state.rightCursor, function(row, rx, ry)
+    drawRows(x, w, state.rows, state.rightScroll, state.rightCursor, function(row, rx, ry, rw, rowIndex)
       love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.print(tostring(row.label), rx + 10, ry + 4)
+      marquee(row.label, rx + 10, ry + 4, rw - 20, state.rightCursor == rowIndex)
     end)
   end
   if state.rightPage ~= "quit" and #rightRows() > visibleRows() then
@@ -751,10 +787,11 @@ local function drawLeft()
     return
   end
   panel(x, w, "MODS")
-  drawRows(x, w, state.modRows, state.modScroll, state.leftCursor, function(row, rx, ry, rw)
+  drawRows(x, w, state.modRows, state.modScroll, state.leftCursor, function(row, rx, ry, rw, rowIndex)
+    local active = state.leftCursor == rowIndex
     if row.action then
       love.graphics.setColor(row.action == "apply" and not state.modsChanged and { 0.6, 0.6, 0.66, 1 } or { 0.75, 0.9, 1, 1 })
-      love.graphics.print(row.label, rx + 10, ry + 4)
+      marquee(row.label, rx + 10, ry + 4, rw - 20, active)
       return
     end
     local on = row.entry.enabled
@@ -762,14 +799,14 @@ local function drawLeft()
     love.graphics.rectangle("fill", rx + 10, ry + 3, 22, 12, 6, 6)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.circle("fill", on and rx + 26 or rx + 16, ry + 9, 5)
-    love.graphics.print(tostring(row.label):sub(1, state.ds and 40 or 17), rx + 38, ry + 1)
+    marquee(row.label, rx + 38, ry + 1, rw - 48, active)
     love.graphics.setFont(font(8))
     if row.state == "error" then
       love.graphics.setColor(1, 0.45, 0.4, 1)
-      love.graphics.print((row.error or "error"):gsub("\n", " "):sub(1, state.ds and 70 or 30), rx + 38, ry + 12)
+      marquee((row.error or "error"):gsub("\n", " "), rx + 38, ry + 12, rw - 48, active)
     else
       love.graphics.setColor(0.6, 0.6, 0.66, 1)
-      love.graphics.print((row.state or "") .. "  v" .. tostring(row.entry.version or ""), rx + 38, ry + 12)
+      marquee((row.state or "") .. "  v" .. tostring(row.entry.version or ""), rx + 38, ry + 12, rw - 48, active)
     end
     love.graphics.setFont(font(11))
   end)
@@ -864,7 +901,8 @@ function M.update(dt)
     state.base = state.sh - PANEL_H
   end
   -- skin: only in the DS layout; the drawn pad gives way to the frame
-  local wantSkin = state.ds and state.opts.skin and state.opts.skin() or "off"
+  -- the 3DS skin is for Android foldables: only there, only in the DS layout
+  local wantSkin = (state.ds and love._os == "Android" and state.opts.skin) and state.opts.skin() or "off"
   local newSkin = (wantSkin ~= "off" and SKIN_TOP[wantSkin]) and wantSkin or nil
   if newSkin ~= state.skin then
     state.skin = newSkin

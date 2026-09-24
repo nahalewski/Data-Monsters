@@ -1318,6 +1318,17 @@ end
 
 function love.update(dt)
   foldCheck()
+  -- on the fold launcher a tap anywhere closes a message (the panel's taps
+  -- never reach the launcher's own tap handler there)
+  if Shell.page == "message" and foldActive() and lovepsp.touches then
+    local ok, t = pcall(lovepsp.touches)
+    local down = ok and t and t[1] and true or false
+    if down and not Shell.msgTouch then
+      Shell.page = Shell.messageBack
+      if FoldUI and FoldUI.swallowTouch then FoldUI.swallowTouch() end
+    end
+    Shell.msgTouch = down
+  end
   if Shell.page == "lid" then
     if lovepsp.touches then
       local ok, t = pcall(lovepsp.touches)

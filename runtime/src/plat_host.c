@@ -404,6 +404,25 @@ void plat_vsync(void) {
   SDL_Delay(1);
 }
 
+/* a finger's normalised window position -> logical pixels.  The renderer
+ * letterboxes the logical frame when the window's aspect differs (a
+ * foldable's square inner screen, the cover screen), so the finger goes
+ * through the same viewport and scale the frame is drawn with. */
+static void finger_to_logical(float fx, float fy, float *lx, float *ly) {
+  int ow = PLAT_SCREEN_W, oh = g_lh;
+  SDL_Rect vp = { 0, 0, 0, 0 };
+  float sx = 1, sy = 1;
+  if (g_ren) {
+    SDL_GetRendererOutputSize(g_ren, &ow, &oh);
+    SDL_RenderGetViewport(g_ren, &vp);
+    SDL_RenderGetScale(g_ren, &sx, &sy);
+  }
+  if (sx <= 0) sx = 1;
+  if (sy <= 0) sy = 1;
+  *lx = fx * ow / sx - vp.x;
+  *ly = fy * oh / sy - vp.y;
+}
+
 void plat_poll(PlatInput *in) {
   SDL_Event e;
   uint32_t b = 0;
@@ -416,9 +435,19 @@ void plat_poll(PlatInput *in) {
                || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)) audio_restart();
       else if (e.type == SDL_FINGERDOWN || e.type == SDL_FINGERUP || e.type == SDL_FINGERMOTION) {
         /* front panel only: the Vita reports the rear pad as a second device */
-        if (e.tfinger.touchId == SDL_GetTouchDevice(0))
-          touch_finger((long)e.tfinger.fingerId, e.type != SDL_FINGERUP, e.tfinger.x * PLAT_SCREEN_W,
-                       e.tfinger.y * (g_ds == 2 ? g_top : g_lh));
+        if (e.tfinger.touchId == SDL_GetTouchDevice(0)) {
+          float lx, ly;
+          finger_to_logical(e.tfinger.x, e.tfinger.y, &lx, &ly);
+          touch_finger((long)e.tfinger.fingerId, e.type != SDL_FINGERUP, lx, ly);
+        }
+      } else if (e.type == SDL_CONTROLLERDEVICEADDED) {
+        /* a pad plugged or paired after start (Bluetooth controllers on Android) */
+        if (!g_pad) g_pad = SDL_GameControllerOpen(e.cdevice.which);
+      } else if (e.type == SDL_CONTROLLERDEVICEREMOVED) {
+        if (g_pad && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(g_pad)) == e.cdevice.which) {
+          SDL_GameControllerClose(g_pad);
+          g_pad = NULL;
+        }
       } else if (touch_enabled() && (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP
                                      || e.type == SDL_MOUSEMOTION)) {
         /* desktop / Vita3K: the left mouse button is a finger */

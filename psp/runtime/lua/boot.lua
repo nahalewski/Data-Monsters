@@ -27,6 +27,25 @@ bit = require("bit")
 unpack = unpack or table.unpack
 loadstring = loadstring or load
 math.pow = math.pow or function(a, b) return a ^ b end
+-- functions Lua 5.4 dropped that LuaJIT (the engine's home) still has
+math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
+math.ldexp = math.ldexp or function(m, e) return m * 2.0 ^ e end
+math.frexp = math.frexp or function(x)
+  if x == 0 then return 0.0, 0 end
+  local e = math.floor(math.log(math.abs(x), 2)) + 1
+  return x / 2.0 ^ e, e
+end
+math.log10 = math.log10 or function(x) return math.log(x, 10) end
+math.cosh = math.cosh or function(x) return (math.exp(x) + math.exp(-x)) / 2 end
+math.sinh = math.sinh or function(x) return (math.exp(x) - math.exp(-x)) / 2 end
+math.tanh = math.tanh or function(x) local a, b = math.exp(x), math.exp(-x) return (a - b) / (a + b) end
+math.mod = math.mod or math.fmod
+table.getn = table.getn or function(t) return #t end
+table.maxn = table.maxn or function(t)
+  local n = 0
+  for k in pairs(t) do if type(k) == "number" and k > n then n = k end end
+  return n
+end
 
 -- setfenv/getfenv for Lua functions, via their _ENV upvalue (the engine
 -- sandboxes data chunks with setfenv(f, {}))

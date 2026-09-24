@@ -18,3 +18,8 @@ psp/runtime/src/*.o
 psp/third_party/lua/*.o
 psp/runtime/test/smoke/save/
 psp/runtime/test/smoke/shot.png
+psp/build_*/
+psp/ports/ps3/build/
+psp/ports/ps3/pkgfiles/
+psp/ports/ps3/*.self
+psp/ports/ps3/*.pkg

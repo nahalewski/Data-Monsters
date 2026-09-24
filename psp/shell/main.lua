@@ -98,6 +98,24 @@ local ROM_DIRS = {
   { real = core.baseDir() .. "roms", mount = "__psp_roms" },
 }
 
+-- A GitHub token for the mod updater lives next to the ROMs, never in the
+-- build: github_token.json ({"token": "ghp_..."}) or github_token.txt.
+local function readGithubToken()
+  for _, dir in ipairs(ROM_DIRS) do
+    local raw = love.filesystem.read(dir.mount .. "/github_token.json")
+    if raw then
+      local ok, Json = pcall(require, "src.link.Json")
+      if ok then
+        local okd, t = pcall(Json.decode, raw)
+        if okd and type(t) == "table" and type(t.token) == "string" then return (t.token:gsub("%s", "")) end
+      end
+    end
+    raw = love.filesystem.read(dir.mount .. "/github_token.txt")
+    if raw and raw:match("%S") then return raw:match("^%s*(%S+)") end
+  end
+  return nil
+end
+
 -- Find canonical ROMs (matched by SHA-1, streamed so a 16 MiB GBA dump
 -- never has to sit in memory on a 32 MiB console).
 -- SHA-1 results keyed by name/size/mtime so a launcher start only hashes
@@ -214,7 +232,8 @@ local SCALING = { "none", "fit", "stretch" }
 local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", stretch = "WIDESCREEN (16:9)" }
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
 local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true,
-                  touch = nil } -- nil: the runtime's default (on for the Vita)
+                  touch = nil, -- nil: the runtime's default (on for the Vita)
+                  layout = nil } -- nil: the runtime's default; "ds": game on top, controls below
 
 local function saveOptions()
   local parts = {}
@@ -230,6 +249,7 @@ local function applyOptions()
   lovepsp.setSwapAB(Options.swapAB)
   lovepsp.env.POKEPORT_AUDIO_RATE = Options.audioRate
   if Options.touch ~= nil and lovepsp.touch then pcall(lovepsp.touch, Options.touch) end
+  if Options.layout and lovepsp.layout then pcall(lovepsp.layout, Options.layout) end
   pcall(love.filesystem.write, "lovepsp_scaling.txt", Options.scaling)
 end
 
@@ -252,6 +272,7 @@ local function loadOptions()
     -- native renderer made it playable, so the setting moved to a new key
     if t.musicNative ~= nil then Options.music = t.musicNative == "true" end
     if t.touch ~= nil then Options.touch = t.touch == "true" end
+    if t.layout == "ds" or t.layout == "single" then Options.layout = t.layout end
   end
   applyOptions()
 end
@@ -284,6 +305,15 @@ local OPTION_ROWS = {
     function() Options.music = not Options.music end },
   { "Music sample rate", function() return Options.audioRate .. " Hz (next launch)" end,
     function(d) Options.audioRate = cycle(RATES, Options.audioRate, d == 0 and 1 or d) end },
+  { "Screen layout", function()
+      if love._os == "PSP" then return "SINGLE (Vita/Android only)" end
+      local cur = lovepsp.layout and lovepsp.layout() or "single"
+      return cur == "ds" and "DS: game above, controls below" or "SINGLE"
+    end,
+    function()
+      if love._os == "PSP" or not lovepsp.layout then return end
+      Options.layout = lovepsp.layout() == "ds" and "single" or "ds"
+    end },
   { "Touch controls", function()
       local on = lovepsp.touch and lovepsp.touch()
       if not on and love._os == "PSP" then return "OFF (Vita only)" end
@@ -748,6 +778,9 @@ local function bootGame(version)
         applyOptions = function() applyOptions() saveOptions() end,
         mods = function() scanMods() return Mods.list end,
         toggleMod = toggleMod,
+        token = readGithubToken,
+        invalidateMods = function() love.filesystem.remove("mods_cache.lua") end,
+        removeTree = removeTree,
         restart = function(bootVersion)
           pcall(love.filesystem.write, "boot_once.txt", bootVersion or "launcher")
           love.event.quit("restart")

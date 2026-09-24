@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __ANDROID__
+#include <SDL_main.h> /* main -> SDL_main for the SDL activity */
+#endif
 #include "lp.h"
 #include "plat.h"
 #include "boot_lua.h" /* generated: static const char boot_lua[]; boot_lua_len */

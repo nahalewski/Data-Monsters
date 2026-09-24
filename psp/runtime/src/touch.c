@@ -21,6 +21,7 @@ const char *lp_font8x8(int cp);
 typedef struct { int active; long id; float x, y; } Finger;
 static Finger g_fingers[MAX_FINGERS];
 static int g_enabled;
+static int g_offy; /* y offset of the control area (DS layout) */
 static int g_visible; /* overlay shown (game presented between the bars) */
 static uint32_t g_last_buttons;
 
@@ -43,9 +44,10 @@ static uint32_t g_last_buttons;
 #define SS_H 20
 
 void touch_set_enabled(int on) { g_enabled = on; if (!on) memset(g_fingers, 0, sizeof g_fingers); }
+void touch_set_offset(int y) { g_offy = y; }
 int touch_enabled(void) { return g_enabled; }
 
-void touch_finger(long id, int down, float nx, float ny) {
+void touch_finger(long id, int down, float lx, float ly) {
   int i, slot = -1;
   if (!g_enabled) return;
   for (i = 0; i < MAX_FINGERS; i++) if (g_fingers[i].active && g_fingers[i].id == id) { slot = i; break; }
@@ -53,12 +55,14 @@ void touch_finger(long id, int down, float nx, float ny) {
   if (slot < 0) for (i = 0; i < MAX_FINGERS; i++) if (!g_fingers[i].active) { slot = i; break; }
   if (slot < 0) return;
   g_fingers[slot].active = 1; g_fingers[slot].id = id;
-  g_fingers[slot].x = nx * PLAT_SCREEN_W; g_fingers[slot].y = ny * PLAT_SCREEN_H;
+  g_fingers[slot].x = lx; g_fingers[slot].y = ly;
 }
 
 static uint32_t hit(float x, float y) {
   uint32_t b = 0;
-  float dx = x - DPAD_X, dy = y - DPAD_Y;
+  float dx, dy;
+  y -= g_offy;
+  dx = x - DPAD_X; dy = y - DPAD_Y;
   float ax = fabsf(dx), ay = fabsf(dy);
   if (ax <= DPAD_ARM + 14 && ay <= DPAD_ARM + 14 && (ax > DPAD_DEAD || ay > DPAD_DEAD)) {
     if (ax >= ay * 0.45f) b |= dx < 0 ? PB_LEFT : PB_RIGHT;
@@ -108,6 +112,7 @@ static void blend(uint32_t *p, int r, int g, int bl, int a) {
 
 static void fill_rect(uint32_t *s, int w, int h, int x0, int y0, int rw, int rh, int r, int g, int b, int a) {
   int x, y;
+  y0 += g_offy;
   for (y = y0; y < y0 + rh; y++) {
     if (y < 0 || y >= h) continue;
     for (x = x0; x < x0 + rw; x++) if (x >= 0 && x < w) blend(s + (long)y * w + x, r, g, b, a);
@@ -116,6 +121,7 @@ static void fill_rect(uint32_t *s, int w, int h, int x0, int y0, int rw, int rh,
 
 static void fill_disc(uint32_t *s, int w, int h, int cx, int cy, int rad, int r, int g, int b, int a) {
   int x, y;
+  cy += g_offy;
   for (y = cy - rad; y <= cy + rad; y++) {
     if (y < 0 || y >= h) continue;
     for (x = cx - rad; x <= cx + rad; x++) {

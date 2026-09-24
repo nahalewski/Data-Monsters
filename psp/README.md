@@ -122,6 +122,32 @@ run here: both are GPU shader renderers and this runtime rasterises on the
 CPU with the engine's palette shaders built in (ShaderFX also downloads its
 presets at runtime; the consoles have no network access in this port).
 
+### Updating mods from GitHub (Vita, Android)
+
+The MODS panel in a game has an **UPDATE FROM GITHUB** button. It fetches
+the official mod index feed, compares each installed mod's version with
+the latest release listed there, downloads the release zip from the
+author's GitHub repository, unpacks it into `save/pokemon-love2d/mods/`
+(which shadows the copy inside the archive) and offers APPLY to restart
+into the game with the new versions. Nothing is ever fetched from
+gen1recomp.com. Downloads use the console's own TLS stack (sceHttp on the
+Vita); the PSP and PS3 have no network support in this port.
+
+A GitHub token is optional and only needed for repositories that require
+one. Put it next to your ROMs as `github_token.json`
+(`{"token": "ghp_..."}`) or `github_token.txt`; it is read at update time,
+sent as the `Authorization` header, and never copied anywhere else. Keep
+that file off anything you share.
+
+### Screen layouts
+
+`Screen layout` on the options page: **SINGLE** (the game with the touch
+pad beside it) or **DS** (a double-height screen: the game in the top
+half, the touch pad and the MODS / MENU buttons in the bottom half; an open
+panel takes the whole bottom half). The Android app also has a **dual**
+mode in which the main display shows only the game and a second display
+shows the bottom half.
+
 ## Other consoles
 
 The same runtime builds for the **PS Vita / Vita TV** (`ports/vita`, SDL2
@@ -142,6 +168,25 @@ controls; START toggles the menu. Gen 1 rows are the engine's own START
 menu items, so rows mods add appear too; Gen 2 keeps its START menu, opened
 from the panel. `shell/lovepsp/vitaui.lua` draws the panels into a canvas
 the runtime composites over the presented frame (`lovepsp.setOverlay`).
+If sound stops after Vita3K goes to the background and back, the runtime
+reopens its audio device when the app regains focus.
+
+### Android
+
+`ports/android/build.sh` builds `dist/android/gen1recomp.apk` with the
+Android SDK's own tools (aapt2, d8, apksigner; no Gradle) from the same
+runtime under SDL2 (`SDL_DIR` points at an SDL 2.30 checkout, `ANDROID_SDK`
+and `ANDROID_NDK` at the SDK and NDK r26). ROMs go in
+`/sdcard/Android/data/com.nahalewski.gen1recomp/files/` (or `roms/` under
+it); saves and the mod folder live under it too. The activity
+(`ports/android/java`) decides the layout: a second display (dual-screen
+phones, an external screen) gets the bottom half through a Presentation
+while the main display shows the game; a foldable held half-open in
+landscape (hinge angle sensor, Android 11+) switches to the DS layout;
+otherwise the single-screen touch layout. The launcher's Screen layout
+option overrides that. The APK has not been run on a device from this
+machine: an emulator cannot run in this environment, so the first run on
+hardware may need fixes.
 `build_all.sh` (or `build_all.bat` on Windows) builds every target whose
 toolchain is installed and zips them into `dist/gen1recomp-ports.zip`. The
 PS3 build packs Lua source instead of bytecode (big-endian PPU). Neither

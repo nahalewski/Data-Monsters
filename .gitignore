@@ -24,3 +24,9 @@ psp/ports/ps3/pkgfiles/
 psp/ports/ps3/*.self
 psp/ports/ps3/*.pkg
 psp/mods_extra/
+psp/ports/android/out/
+psp/ports/android/gen/
+psp/ports/android/jni/SDL
+psp/ports/android/debug.keystore
+psp/ports/android/res/mipmap-xxhdpi/
+psp/build_android/

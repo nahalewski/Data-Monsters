@@ -142,6 +142,9 @@ int plat_touch(int on) { (void)on; return 0; }
 int plat_touch_get(int i, float *x, float *y) { (void)i; (void)x; (void)y; return 0; }
 void plat_set_overlay(const uint32_t *px, int w, int h) { (void)px; (void)w; (void)h; }
 void plat_set_bars(int left, int right) { (void)left; (void)right; }
+void plat_set_layout(int ds) { (void)ds; }
+int plat_get_layout(void) { return 0; }
+void plat_screen_size(int *w, int *h) { *w = PLAT_SCREEN_W; *h = PLAT_SCREEN_H; }
 
 /* ------------------------------------------------------------ audio */
 #define AUDIO_FRAMES 1024

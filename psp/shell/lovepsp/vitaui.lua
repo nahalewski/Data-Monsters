@@ -1,10 +1,17 @@
--- Vita touch UI for a running game: two floating buttons appear at the
--- edges when the screen is touched; the left one slides in a MODS panel
--- (enable / disable, apply with a restart), the right one a menu that
--- replaces the game's START menu -- POKeMON, ITEM, the trainer card, SAVE,
--- OPTIONS (this port's settings), the game's own OPTION screen, MODS and
--- QUIT (back to the launcher).  While a panel is open the game shrinks
--- between the panels and keeps running under the physical controls.
+-- Touch UI for a running game (Vita, Android, any touch build).
+--
+-- Two floating buttons appear at the edges when the screen is touched; the
+-- left one slides in a MODS panel (enable / disable, update from GitHub,
+-- apply with a restart), the right one a menu that replaces the game's
+-- START menu -- POKeMON, ITEM, the trainer card, SAVE, GAME OPTION, this
+-- port's OPTIONS, MODS and QUIT (back to the launcher).  While a panel is
+-- open the game shrinks between the panels and keeps running under the
+-- physical controls.
+--
+-- In the DS layout (lovepsp.layout("ds"): a double-height logical screen,
+-- the game in the top half) the bottom half is the control surface: the
+-- touch pad, two labelled buttons, and a panel takes that whole half when
+-- open -- the second screen of a dual-screen or folded phone.
 --
 -- The panels are drawn into a screen-sized canvas that the runtime
 -- composites over the presented frame (lovepsp.setOverlay), so the game's
@@ -15,12 +22,13 @@
 local M = {}
 
 local lovepsp = love.lovepsp
-local SCREEN_W, SCREEN_H = 480, 272
-local PANEL_W = 150
+local SCREEN_W, PANEL_H = 480, 272
+local SIDE_W = 150
 local ROW_H = 24
 local CIRCLE_R = 13
 local CIRCLE_Y = 30
 local SHOW_SECONDS = 4
+local FEED = "https://bryanthaboi.github.io/gen1recomp-mod-index/data/index.json"
 
 local ACCENT = { 0.25, 0.55, 1.0 }
 local PANEL_BG = { 0.09, 0.10, 0.14, 0.94 }
@@ -28,29 +36,35 @@ local PANEL_BG = { 0.09, 0.10, 0.14, 0.94 }
 local state = {
   game = nil, opts = nil, attached = false,
   left = false, right = false, rightPage = "menu",
-  circleTimer = 0, hud = nil, wasDown = false,
+  circleTimer = 0, hud = nil, hudW = 0, hudH = 0, wasDown = false,
   rows = {}, modRows = {}, modScroll = 0, modsChanged = false,
   passthrough = false, message = nil, messageTimer = 0,
+  progress = nil, updater = nil,
+  sw = SCREEN_W, sh = PANEL_H, ds = false, base = 0,
 }
 
-local function font(size)
-  return state.opts.font(size)
-end
+local function font(size) return state.opts.font(size) end
+local function log(msg) if state.opts.log then state.opts.log(msg) end end
 
-local function log(msg)
-  if state.opts.log then state.opts.log(msg) end
+-- geometry of the two panels for the current layout
+local function panelRect(side)
+  if state.ds then return 0, SCREEN_W end
+  if side == "left" then return 0, SIDE_W end
+  return SCREEN_W - SIDE_W, SIDE_W
 end
 
 ---------------------------------------------------------------- rows
+
+local function ascii(label)
+  return (tostring(label):gsub("[\194-\244][\128-\191]*", "e"))
+end
 
 local function buildMenuRows()
   local game, opts = state.game, state.opts
   local rows = {}
   local Strings = require("src.core.Strings")
   local function push(label, action, keep)
-    -- the runtime's bitmap font is ASCII: POKéMON -> POKeMON
-    label = tostring(label):gsub("[\194-\244][\128-\191]*", "e")
-    rows[#rows + 1] = { label = label, action = action, keep = keep }
+    rows[#rows + 1] = { label = ascii(label), action = action, keep = keep }
   end
   if opts.generation == 1 then
     local ok, menu = pcall(function() return require("src.ui.StartMenu").new(game) end)
@@ -77,7 +91,7 @@ local function buildMenuRows()
     end)
   end
   push("OPTIONS", function() state.rightPage = "options" end, true)
-  push("MODS", function() state.left = true end, true)
+  push("MODS", function() M.openLeft() end, true)
   push("QUIT", function() state.rightPage = "quit" end, true)
   return rows
 end
@@ -113,9 +127,111 @@ local function buildModRows()
   return rows
 end
 
+---------------------------------------------------------------- updater
+
+local function removeTree(path)
+  if state.opts.removeTree then return state.opts.removeTree(path) end
+end
+
+local function findManifestDir(root, wantId, depth)
+  local raw = love.filesystem.read(root .. "/manifest.json")
+  if raw then
+    local ok, Json = pcall(require, "src.link.Json")
+    if ok then
+      local okd, m = pcall(Json.decode, raw)
+      if okd and type(m) == "table" and (not wantId or m.id == wantId) then return root end
+    end
+  end
+  if depth <= 0 then return nil end
+  for _, item in ipairs(love.filesystem.getDirectoryItems(root)) do
+    local sub = root .. "/" .. item
+    if love.filesystem.getInfo(sub, "directory") then
+      local found = findManifestDir(sub, wantId, depth - 1)
+      if found then return found end
+    end
+  end
+end
+
+-- one mod per resume: the panel redraws its progress line between steps
+local function updateAll()
+  local Json = require("src.link.Json")
+  local feedUrl = (love._env and love._env.LOVEPSP_MOD_FEED) or FEED
+  local token = state.opts.token and state.opts.token() or nil
+  state.progress = "Fetching mod index..."
+  coroutine.yield()
+  local ok, err = lovepsp.http_get(feedUrl, "mods/.index.json")
+  if not ok then state.progress = "Index: " .. tostring(err):sub(1, 40) return end
+  local raw = love.filesystem.read("mods/.index.json")
+  local okj, feed = pcall(Json.decode, raw or "")
+  love.filesystem.remove("mods/.index.json")
+  if not okj or type(feed) ~= "table" then state.progress = "Index: bad JSON" return end
+  local byId = {}
+  for _, m in ipairs(feed.mods or feed) do if type(m) == "table" and m.id then byId[m.id] = m end end
+  local todo = {}
+  for _, row in ipairs(state.modRows) do
+    local f = byId[row.entry.id]
+    local latest = f and f.latest
+    if latest and type(latest.zip) == "table" and latest.zip.url and latest.version
+        and latest.version ~= row.entry.version then
+      todo[#todo + 1] = { entry = row.entry, url = latest.zip.url, version = latest.version }
+    end
+  end
+  if #todo == 0 then state.progress = "All mods are up to date" return end
+  local updated, failed = 0, 0
+  for i, t in ipairs(todo) do
+    state.progress = ("Updating %s %s (%d/%d)"):format(t.entry.name:sub(1, 14), t.version, i, #todo)
+    coroutine.yield()
+    removeTree("mods/.update")
+    love.filesystem.remove("mods/.dl.zip")
+    local okd, derr = lovepsp.http_get(t.url, "mods/.dl.zip", token)
+    local why
+    if okd then
+      local n, uerr = lovepsp.unzip("mods/.dl.zip", "mods/.update")
+      log(("mod update %s: unzip -> %s files %s"):format(t.entry.id, tostring(n), tostring(uerr or "")))
+      if n then
+        local dir = findManifestDir("mods/.update", t.entry.id, 3)
+        if dir then
+          local dest = "mods/" .. (t.entry.dir or t.entry.id)
+          removeTree(dest)
+          if lovepsp.rename(dir, dest) then updated = updated + 1 else why = "cannot move into place" end
+        else
+          why = "no manifest for " .. t.entry.id .. " in the zip"
+        end
+      else
+        why = uerr
+      end
+    else
+      why = derr
+    end
+    if why then
+      failed = failed + 1
+      log(("mod update %s: %s"):format(t.entry.id, tostring(why)))
+    end
+    love.filesystem.remove("mods/.dl.zip")
+    removeTree("mods/.update")
+  end
+  if state.opts.invalidateMods then state.opts.invalidateMods() end
+  state.modRows = buildModRows()
+  state.modsChanged = state.modsChanged or updated > 0
+  state.progress = ("%d updated, %d failed"):format(updated, failed)
+end
+
+local function startUpdate()
+  if state.updater then return end
+  if not (lovepsp.network and lovepsp.network() and lovepsp.http_get) then
+    state.progress = "No network on this console"
+    return
+  end
+  state.updater = coroutine.create(function()
+    local ok, err = pcall(updateAll)
+    if not ok then state.progress = "Update failed" log("mod update: " .. tostring(err)) end
+  end)
+end
+
 ---------------------------------------------------------------- panels
 
 local function openRight()
+  if state.ds then state.left = false end
   state.right = true
   state.rightPage = "menu"
   state.rows = buildMenuRows()
@@ -126,28 +242,38 @@ local function closeRight()
   state.rightPage = "menu"
 end
 
-local function openLeft()
+function M.openLeft()
+  if state.ds then closeRight() end
   state.left = true
   state.modRows = buildModRows()
   state.modScroll = 0
 end
 
 local function applyBars()
-  local l = state.left and PANEL_W or -1
-  local r = state.right and PANEL_W or -1
+  if state.ds then
+    -- bars do not move the game in the DS layout, but 0,0 hides the pad
+    -- while a panel covers the bottom half
+    if lovepsp.setBars then
+      if state.left or state.right then lovepsp.setBars(0, 0) else lovepsp.setBars(-1, -1) end
+    end
+    return
+  end
+  local l = state.left and SIDE_W or -1
+  local r = state.right and SIDE_W or -1
   if lovepsp.setBars then lovepsp.setBars(l, r) end
 end
 
 ---------------------------------------------------------------- input
 
+local function visibleRows() return math.floor((PANEL_H - 36 - 58) / ROW_H) end
+
 local function tapRight(x, y)
-  local px = SCREEN_W - PANEL_W
+  local px, pw = panelRect("right")
   if y < 30 then closeRight() return end
   local rows = state.rightPage == "options" and buildOptionRows() or state.rows
   if state.rightPage == "quit" then
-    -- YES / NO boxes
     if y >= 120 and y < 150 then
-      if x < px + PANEL_W / 2 then
+      if x < px + pw / 2 then
         if state.opts.restart then state.opts.restart(nil) end
       else
         state.rightPage = "menu"
@@ -167,15 +293,19 @@ local function tapRight(x, y)
 end
 
 local function tapLeft(x, y)
+  local px, pw = panelRect("left")
   if y < 30 then state.left = false return end
-  local visible = math.floor((SCREEN_H - 36 - 30) / ROW_H)
-  -- bottom strip: scroll arrows and APPLY
-  if y >= SCREEN_H - 30 then
-    if x < 40 then state.modScroll = math.max(0, state.modScroll - visible)
-    elseif x < 80 then state.modScroll = math.min(math.max(0, #state.modRows - visible), state.modScroll + visible)
-    elseif state.modsChanged and state.opts.restart then
+  local visible = visibleRows()
+  if y >= PANEL_H - 30 then
+    -- bottom strip: UP, DN, APPLY
+    if x < px + 40 then state.modScroll = math.max(0, state.modScroll - visible)
+    elseif x < px + 80 then state.modScroll = math.min(math.max(0, #state.modRows - visible), state.modScroll + visible)
+    elseif x >= px + pw - 64 and state.modsChanged and state.opts.restart then
       state.opts.restart(state.opts.version)
     end
+    return
+  elseif y >= PANEL_H - 56 then
+    startUpdate()
     return
   end
   local i = math.floor((y - 36) / ROW_H) + 1 + state.modScroll
@@ -188,11 +318,22 @@ local function tapLeft(x, y)
 end
 
 local function tapAt(x, y)
-  if state.left and x < PANEL_W then return tapLeft(x, y) end
-  if state.right and x >= SCREEN_W - PANEL_W then return tapRight(x, y) end
-  -- floating buttons (only while shown)
-  if state.circleTimer > 0 or state.left or state.right then
-    if not state.left and x < 40 and math.abs(y - CIRCLE_Y) < 24 then openLeft() return end
+  y = y - state.base
+  if y < 0 then
+    -- the game half in the DS layout
+    state.circleTimer = SHOW_SECONDS
+    return
+  end
+  if state.left then
+    local px, pw = panelRect("left")
+    if x >= px and x < px + pw then return tapLeft(x, y) end
+  end
+  if state.right then
+    local px, pw = panelRect("right")
+    if x >= px and x < px + pw then return tapRight(x, y) end
+  end
+  if state.ds or state.circleTimer > 0 or state.left or state.right then
+    if not state.left and x < 40 and math.abs(y - CIRCLE_Y) < 24 then M.openLeft() return end
     if not state.right and x > SCREEN_W - 40 and math.abs(y - CIRCLE_Y) < 24 then openRight() return end
   end
   state.circleTimer = SHOW_SECONDS
@@ -212,61 +353,66 @@ local function circle(x, y, label)
     love.graphics.setFont(font(12))
     love.graphics.print("M", x - 4, y - 7)
   end
+  if state.ds then
+    love.graphics.setFont(font(8))
+    love.graphics.setColor(0.8, 0.85, 0.95, 1)
+    love.graphics.printf(label == "menu" and "MENU" or "MODS", x - 24, y + CIRCLE_R + 4, 48, "center")
+  end
 end
 
-local function panel(x, title)
+local function panel(x, w, title)
   love.graphics.setColor(PANEL_BG)
-  love.graphics.rectangle("fill", x, 0, PANEL_W, SCREEN_H)
+  love.graphics.rectangle("fill", x, 0, w, PANEL_H)
   love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
-  love.graphics.rectangle("fill", x, 0, PANEL_W, 26)
+  love.graphics.rectangle("fill", x, 0, w, 26)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setFont(font(13))
   love.graphics.print(title, x + 10, 6)
-  love.graphics.print("X", x + PANEL_W - 18, 6)
+  love.graphics.print("X", x + w - 18, 6)
 end
 
-local function drawRows(x, rows, scroll, selectedFn)
+local function drawRows(x, w, rows, scroll, selectedFn)
   love.graphics.setFont(font(11))
   local y = 36
-  local visible = math.floor((SCREEN_H - 36 - 30) / ROW_H)
+  local visible = visibleRows()
   for i = scroll + 1, math.min(#rows, scroll + visible) do
     local row = rows[i]
     love.graphics.setColor(1, 1, 1, 0.08)
-    love.graphics.rectangle("fill", x + 6, y - 2, PANEL_W - 12, ROW_H - 4, 4, 4)
-    if selectedFn then selectedFn(row, x, y) end
+    love.graphics.rectangle("fill", x + 6, y - 2, w - 12, ROW_H - 4, 4, 4)
+    if selectedFn then selectedFn(row, x, y, w) end
     y = y + ROW_H
   end
 end
 
 local function drawRight()
-  local x = SCREEN_W - PANEL_W
+  local x, w = panelRect("right")
   if state.rightPage == "options" then
-    panel(x, "OPTIONS")
-    drawRows(x, buildOptionRows(), 0, function(row, rx, ry)
+    panel(x, w, "OPTIONS")
+    drawRows(x, w, buildOptionRows(), 0, function(row, rx, ry, rw)
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.print(row.label, rx + 10, ry)
       if row.value then
         love.graphics.setColor(0.6, 0.85, 1, 1)
         love.graphics.setFont(font(9))
-        love.graphics.print(tostring(row.value()):sub(1, 26), rx + 10, ry + 11)
+        love.graphics.print(tostring(row.value()):sub(1, state.ds and 60 or 26), rx + 10, ry + 11)
         love.graphics.setFont(font(11))
       end
     end)
   elseif state.rightPage == "quit" then
-    panel(x, "QUIT")
+    panel(x, w, "QUIT")
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(font(11))
-    love.graphics.printf("Back to the launcher?\nUnsaved progress is lost.", x + 8, 50, PANEL_W - 16, "center")
+    love.graphics.printf("Back to the launcher?\nUnsaved progress is lost.", x + 8, 50, w - 16, "center")
     love.graphics.setColor(0.8, 0.25, 0.25, 1)
-    love.graphics.rectangle("fill", x + 10, 120, PANEL_W / 2 - 15, 30, 5, 5)
+    love.graphics.rectangle("fill", x + 10, 120, w / 2 - 15, 30, 5, 5)
     love.graphics.setColor(0.3, 0.3, 0.36, 1)
-    love.graphics.rectangle("fill", x + PANEL_W / 2 + 5, 120, PANEL_W / 2 - 15, 30, 5, 5)
+    love.graphics.rectangle("fill", x + w / 2 + 5, 120, w / 2 - 15, 30, 5, 5)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf("YES", x + 10, 129, PANEL_W / 2 - 15, "center")
-    love.graphics.printf("NO", x + PANEL_W / 2 + 5, 129, PANEL_W / 2 - 15, "center")
+    love.graphics.printf("YES", x + 10, 129, w / 2 - 15, "center")
+    love.graphics.printf("NO", x + w / 2 + 5, 129, w / 2 - 15, "center")
   else
-    panel(x, "MENU")
-    drawRows(x, state.rows, 0, function(row, rx, ry)
+    panel(x, w, "MENU")
+    drawRows(x, w, state.rows, 0, function(row, rx, ry)
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.print(tostring(row.label), rx + 10, ry + 4)
     end)
@@ -274,51 +420,68 @@ local function drawRight()
 end
 
 local function drawLeft()
-  panel(0, "MODS")
-  drawRows(0, state.modRows, state.modScroll, function(row, rx, ry)
+  local x, w = panelRect("left")
+  panel(x, w, "MODS")
+  drawRows(x, w, state.modRows, state.modScroll, function(row, rx, ry, rw)
     local on = row.entry.enabled
     love.graphics.setColor(on and { 0.35, 0.9, 0.5, 1 } or { 0.5, 0.5, 0.56, 1 })
     love.graphics.rectangle("fill", rx + 10, ry + 3, 22, 12, 6, 6)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.circle("fill", on and rx + 26 or rx + 16, ry + 9, 5)
-    love.graphics.print(tostring(row.label):sub(1, 17), rx + 38, ry + 1)
+    love.graphics.print(tostring(row.label):sub(1, state.ds and 40 or 17), rx + 38, ry + 1)
     love.graphics.setFont(font(8))
     if row.state == "error" then
       love.graphics.setColor(1, 0.45, 0.4, 1)
-      love.graphics.print((row.error or "error"):gsub("\n", " "):sub(1, 30), rx + 38, ry + 12)
-    elseif row.state then
+      love.graphics.print((row.error or "error"):gsub("\n", " "):sub(1, state.ds and 70 or 30), rx + 38, ry + 12)
+    else
       love.graphics.setColor(0.6, 0.6, 0.66, 1)
-      love.graphics.print(row.state, rx + 38, ry + 12)
+      love.graphics.print((row.state or "") .. "  v" .. tostring(row.entry.version or ""), rx + 38, ry + 12)
     end
     love.graphics.setFont(font(11))
   end)
-  -- bottom strip
+  -- bottom strip: UP DN UPDATE APPLY
+  local sy = PANEL_H - 28
   love.graphics.setColor(1, 1, 1, 0.12)
-  love.graphics.rectangle("fill", 6, SCREEN_H - 28, 32, 22, 4, 4)
-  love.graphics.rectangle("fill", 42, SCREEN_H - 28, 32, 22, 4, 4)
+  love.graphics.rectangle("fill", x + 6, sy, 32, 22, 4, 4)
+  love.graphics.rectangle("fill", x + 42, sy, 32, 22, 4, 4)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setFont(font(11))
-  love.graphics.print("UP", 12, SCREEN_H - 23)
-  love.graphics.print("DN", 48, SCREEN_H - 23)
+  love.graphics.print("UP", x + 12, sy + 5)
+  love.graphics.print("DN", x + 48, sy + 5)
   if state.modsChanged then
     love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
-    love.graphics.rectangle("fill", 80, SCREEN_H - 28, PANEL_W - 86, 22, 4, 4)
+    love.graphics.rectangle("fill", x + w - 64, sy, 58, 22, 4, 4)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("APPLY+RESTART", 84, SCREEN_H - 23)
-  else
-    love.graphics.setColor(0.6, 0.6, 0.66, 1)
+    love.graphics.setFont(font(9))
+    love.graphics.printf("APPLY", x + w - 64, sy + 6, 58, "center")
+  end
+  -- second strip: UPDATE FROM GITHUB (full width) with the progress line above
+  if lovepsp.network and lovepsp.network() then
+    love.graphics.setColor(0.3, 0.6, 0.5, 1)
+    love.graphics.rectangle("fill", x + 6, sy - 26, w - 12, 22, 4, 4)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setFont(font(9))
+    love.graphics.printf(state.updater and "UPDATING..." or "UPDATE FROM GITHUB", x + 6, sy - 20, w - 12, "center")
+  end
+  if state.progress then
+    love.graphics.setColor(0.85, 0.9, 1, 1)
     love.graphics.setFont(font(8))
-    love.graphics.print(("%d mods"):format(#state.modRows), 84, SCREEN_H - 21)
+    love.graphics.printf(state.progress, x + 6, sy - 38, w - 12, "center")
   end
 end
 
 local function render()
-  if not state.hud then state.hud = love.graphics.newCanvas(SCREEN_W, SCREEN_H) end
+  local sw, sh = state.sw, state.sh
+  if not state.hud or state.hudW ~= sw or state.hudH ~= sh then
+    state.hud = love.graphics.newCanvas(sw, sh)
+    state.hudW, state.hudH = sw, sh
+  end
   love.graphics.push("all")
   love.graphics.setCanvas(state.hud)
   love.graphics.clear(0, 0, 0, 0)
   love.graphics.setBlendMode("alpha")
-  if state.circleTimer > 0 or state.left or state.right then
+  love.graphics.translate(0, state.base)
+  if state.ds or state.circleTimer > 0 or state.left or state.right then
     if not state.left then circle(18, CIRCLE_Y, "mods") end
     if not state.right then circle(SCREEN_W - 18, CIRCLE_Y, "menu") end
   end
@@ -326,10 +489,10 @@ local function render()
   if state.right then drawRight() end
   if state.message then
     love.graphics.setColor(0, 0, 0, 0.7)
-    love.graphics.rectangle("fill", 120, SCREEN_H - 40, 240, 22, 4, 4)
+    love.graphics.rectangle("fill", 120, PANEL_H - 40, 240, 22, 4, 4)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(font(9))
-    love.graphics.printf(state.message, 124, SCREEN_H - 35, 232, "center")
+    love.graphics.printf(state.message, 124, PANEL_H - 35, 232, "center")
   end
   love.graphics.setCanvas()
   love.graphics.pop()
@@ -341,9 +504,9 @@ end
 function M.attach(game, opts)
   state.game, state.opts = game, opts
   state.left, state.right, state.circleTimer = false, false, 0
+  state.progress, state.updater, state.modsChanged = nil, nil, false
   state.attached = lovepsp and lovepsp.setOverlay and lovepsp.touches and true or false
   if not state.attached then return false end
-  -- START opens this menu instead of the game's own
   local Screens = require("src.ui.Screens")
   if not Screens._vitaPush then
     Screens._vitaPush = Screens.push
@@ -370,6 +533,11 @@ function M.isOpen() return state.left or state.right end
 
 function M.update(dt)
   if not state.attached then return end
+  if lovepsp.screen then
+    state.sw, state.sh = lovepsp.screen()
+    state.ds = state.sh > PANEL_H
+    state.base = state.sh - PANEL_H
+  end
   local ok, touches = pcall(lovepsp.touches)
   local t = ok and touches and touches[1]
   if t and not state.wasDown then tapAt(t.x, t.y) end
@@ -381,8 +549,13 @@ function M.update(dt)
     state.messageTimer = state.messageTimer - dt
     if state.messageTimer <= 0 then state.message = nil end
   end
+  if state.updater then
+    local okr, err = coroutine.resume(state.updater)
+    if not okr then log("mod update: " .. tostring(err)) end
+    if coroutine.status(state.updater) == "dead" then state.updater = nil end
+  end
   applyBars()
-  if state.left or state.right or state.circleTimer > 0 or state.message then
+  if state.ds or state.left or state.right or state.circleTimer > 0 or state.message then
     render()
   else
     lovepsp.setOverlay(nil)

@@ -605,6 +605,15 @@ static int fs_read_l(lua_State *L) {
   return 2;
 }
 
+/* real path of a save-relative file, for the native downloader/unzipper */
+void fs_save_real(const char *rel, char *out, size_t n) {
+  char dir[700], *slash;
+  save_path(rel, out, n);
+  strcpy(dir, out);
+  slash = strrchr(dir, '/');
+  if (slash) { *slash = 0; mkdirs(dir); }
+}
+
 static int write_impl(lua_State *L, const char *mode) {
   const char *path = luaL_checkstring(L, 1);
   size_t len;

@@ -11,7 +11,7 @@ TARGET := $(B)/lovepsp
 LUA_DIR := ../third_party/lua
 LUA_SRC := $(filter-out $(LUA_DIR)/luac.c,$(wildcard $(LUA_DIR)/*.c))
 RT_SRC := src/main.c src/obj.c src/fs.c src/image.c src/gfx.c src/font.c src/audio.c \
-          src/core.c src/apu.c src/vorbis.c src/plat_common.c src/plat_psp.c
+          src/core.c src/apu.c src/vorbis.c src/plat_common.c src/plat_psp.c src/net.c src/zipx.c
 
 OBJS := $(RT_SRC:.c=.o) $(LUA_SRC:.c=.o)
 

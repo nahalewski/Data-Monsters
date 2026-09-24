@@ -23,6 +23,10 @@
 int _newlib_heap_size_user = 256 * 1024 * 1024;
 #define VITA_BASE "ux0:data/gen1recomp/"
 #endif
+#ifdef __ANDROID__
+#include <android/log.h>
+#include <jni.h>
+#endif
 #ifdef __PSL1GHT__
 #include <sysutil/sysutil.h>
 /* installed from the .pkg (or the folder) as /dev_hdd0/game/GEN1RECMP/ */
@@ -45,12 +49,15 @@ static SDL_GameController *g_pad;
 static SDL_Joystick *g_joy; /* raw pad when no controller mapping exists (PS3) */
 static SDL_Renderer *g_ren;
 static SDL_Texture *g_tex;
-static uint32_t g_screen[PLAT_SCREEN_W * PLAT_SCREEN_H];
+static uint32_t g_screen[PLAT_SCREEN_W * PLAT_SCREEN_H * 2]; /* double height for the DS layout */
+static int g_lh = PLAT_SCREEN_H; /* current logical height */
+static int g_ds;
 static char g_base[1024], g_save[1100], g_self[1100];
 static int g_headless, g_quit;
 static long g_frame, g_max_frames = -1;
 static long g_subframe; /* headless: ticks within a frame so time never stalls */
 static SDL_AudioDeviceID g_adev;
+static void sdl_audio(void *ud, Uint8 *stream, int len);
 static plat_audio_cb g_acb;
 static SDL_mutex *g_amutex;
 
@@ -101,7 +108,7 @@ static void parse_env(void) {
         if (sscanf(name, "touch@%f@%f", &tx, &ty) == 2) {
           /* touch@X@Y: hold a finger at logical screen coordinates */
           g_holds[g_nholds].btn = 0;
-          g_holds[g_nholds].tx = tx / PLAT_SCREEN_W; g_holds[g_nholds].ty = ty / PLAT_SCREEN_H;
+          g_holds[g_nholds].tx = tx; g_holds[g_nholds].ty = ty;
         } else g_holds[g_nholds].btn = btn_from_name(name);
         g_nholds++;
       }
@@ -118,11 +125,12 @@ int plat_init(int argc, char **argv) {
   const char *b = getenv("LOVEPSP_BASE"), *sv = getenv("LOVEPSP_SAVE");
   g_headless = getenv("LOVEPSP_HEADLESS") && atoi(getenv("LOVEPSP_HEADLESS"));
   parse_env();
-#ifdef __vita__
+#if defined(__vita__) || defined(__ANDROID__)
   touch_set_enabled(1);
 #else
   if (getenv("LOVEPSP_TOUCH")) touch_set_enabled(atoi(getenv("LOVEPSP_TOUCH")));
 #endif
+  if (getenv("LOVEPSP_LAYOUT") && !strcmp(getenv("LOVEPSP_LAYOUT"), "ds")) plat_set_layout(1);
 #if defined(__PSL1GHT__)
   strcpy(g_base, PS3_BASE);
   mkdir(g_base, 0777);
@@ -133,6 +141,32 @@ int plat_init(int argc, char **argv) {
   scePowerSetArmClockFrequency(444);
   scePowerSetBusClockFrequency(222);
   scePowerSetGpuClockFrequency(222);
+#elif defined(__ANDROID__)
+  {
+    /* the app's external files dir: /sdcard/Android/data/<package>/files/
+     * (ROMs go there, or in roms/ under it); game.pak is copied out of the
+     * APK's assets once, so the C side can read it with stdio */
+    const char *ext = SDL_AndroidGetExternalStoragePath();
+    SDL_RWops *in;
+    snprintf(g_base, sizeof g_base, "%s/", ext ? ext : "/sdcard");
+    mkdir(g_base, 0777);
+    snprintf(g_self, sizeof g_self, "%sgame.pak", g_base);
+    in = SDL_RWFromFile("game.pak", "rb");
+    if (in) {
+      Sint64 want = SDL_RWsize(in);
+      struct stat st;
+      if (stat(g_self, &st) != 0 || (Sint64)st.st_size != want) {
+        FILE *out = fopen(g_self, "wb");
+        if (out) {
+          static char buf[65536];
+          size_t n;
+          while ((n = SDL_RWread(in, buf, 1, sizeof buf)) > 0) fwrite(buf, 1, n, out);
+          fclose(out);
+        }
+      }
+      SDL_RWclose(in);
+    }
+  }
 #else
   if (b) strncpy(g_base, b, sizeof g_base - 2);
   else if (argc > 0) {
@@ -150,6 +184,8 @@ int plat_init(int argc, char **argv) {
    * the Vita's lives inside the installed app (app0:) */
 #if defined(__vita__)
   strcpy(g_self, "app0:game.pak");
+#elif defined(__ANDROID__)
+  /* set above */
 #elif defined(__PSL1GHT__)
   snprintf(g_self, sizeof g_self, "%sgame.pak", g_base);
 #else
@@ -165,7 +201,7 @@ int plat_init(int argc, char **argv) {
     g_win = SDL_CreateWindow("lovepsp", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 #if defined(__PSL1GHT__)
                              1280, 720, SDL_WINDOW_FULLSCREEN);
-#elif defined(__vita__)
+#elif defined(__vita__) || defined(__ANDROID__)
                              PLAT_SCREEN_W * 2, PLAT_SCREEN_H * 2, SDL_WINDOW_FULLSCREEN);
 #else
                              PLAT_SCREEN_W * 2, PLAT_SCREEN_H * 2, SDL_WINDOW_RESIZABLE);
@@ -197,14 +233,62 @@ int plat_touch(int on) {
   if (on >= 0) touch_set_enabled(on);
   return touch_enabled();
 }
+
+void plat_screen_size(int *w, int *h) { *w = PLAT_SCREEN_W; *h = g_lh; }
+int plat_get_layout(void) { return g_ds; }
+/* 0: one screen.  1 (ds): double-height logical screen, game above,
+ * controls below.  2 (dual): the same double-height screen, but the window
+ * shows only the top half; the bottom half is read by plat_bottom_half()
+ * for a second display. */
+void plat_set_layout(int mode) {
+  int shown;
+  if (mode < 0 || mode > 2) mode = 0;
+  if (mode == g_ds) return;
+  g_ds = mode;
+  g_lh = mode ? PLAT_SCREEN_H * 2 : PLAT_SCREEN_H;
+  shown = mode == 1 ? g_lh : PLAT_SCREEN_H;
+  touch_set_offset(mode ? PLAT_SCREEN_H : 0);
+  if (g_ren) {
+    if (g_tex) SDL_DestroyTexture(g_tex);
+    SDL_RenderSetLogicalSize(g_ren, PLAT_SCREEN_W, shown);
+    g_tex = SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, PLAT_SCREEN_W, shown);
+  }
+}
+
+/* bottom half of the logical screen as 0xAARRGGBB ints (dual mode) */
+int plat_bottom_half(uint32_t *out, int w, int h) {
+  int x, y;
+  if (g_ds != 2 || w != PLAT_SCREEN_W || h != PLAT_SCREEN_H) return 0;
+  for (y = 0; y < h; y++) {
+    const uint32_t *s = g_screen + (long)(PLAT_SCREEN_H + y) * PLAT_SCREEN_W;
+    for (x = 0; x < w; x++) {
+      uint32_t p = s[x];
+      out[(long)y * w + x] = 0xff000000u | (PX_R(p) << 16) | (PX_G(p) << 8) | PX_B(p);
+    }
+  }
+  return 1;
+}
+
+/* the mixer's device dies with the app in the background on some hosts
+ * (Vita3K): reopen it when the app comes back */
+static void audio_restart(void) {
+  SDL_AudioSpec want, have;
+  if (g_headless || !g_acb) return;
+  if (g_adev) SDL_CloseAudioDevice(g_adev);
+  SDL_zero(want);
+  want.freq = PLAT_AUDIO_RATE; want.format = AUDIO_S16SYS; want.channels = 2;
+  want.samples = 1024; want.callback = sdl_audio;
+  g_adev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+  if (g_adev) SDL_PauseAudioDevice(g_adev, 0);
+}
 int plat_touch_get(int i, float *x, float *y) { return touch_get(i, x, y); }
 void plat_set_overlay(const uint32_t *px, int w, int h) { g_hud = px; g_hud_w = w; g_hud_h = h; }
 void plat_set_bars(int left, int right) { plat_layout_set_bars(left, right); }
 
 static void composite_hud(void) {
   int x, y;
-  if (!g_hud || g_hud_w != PLAT_SCREEN_W || g_hud_h != PLAT_SCREEN_H) return;
-  for (y = 0; y < PLAT_SCREEN_H; y++) {
+  if (!g_hud || g_hud_w != PLAT_SCREEN_W || g_hud_h != g_lh) return;
+  for (y = 0; y < g_lh; y++) {
     const uint32_t *s = g_hud + (long)y * PLAT_SCREEN_W;
     uint32_t *d = g_screen + (long)y * PLAT_SCREEN_W;
     for (x = 0; x < PLAT_SCREEN_W; x++) {
@@ -225,19 +309,33 @@ static void composite_hud(void) {
 
 void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
   int i;
-  if (touch_enabled()) {
-    /* a game (small source) sits between the control bars; the launcher
-     * fills the screen and takes taps directly through lovepsp.touches() */
-    mode = 4;
-    /* the pad hides while the shell's sidebars own the bars */
-    touch_set_visible(w * 2 <= PLAT_SCREEN_W && !plat_layout_custom_bars());
+  if (g_ds) {
+    /* DS layout: the game fills the top half, the bottom half is the
+     * control surface (touch pad, panels) */
+    int y;
+    if (mode == 4) mode = 1;
+    plat_blit_scaled(px, w, h, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_W, PLAT_SCREEN_H, mode, smooth);
+    for (y = PLAT_SCREEN_H; y < g_lh; y++) {
+      uint32_t *row = g_screen + (long)y * PLAT_SCREEN_W;
+      int x;
+      for (x = 0; x < PLAT_SCREEN_W; x++) row[x] = PX(16, 16, 20, 255);
+    }
+    touch_set_visible(touch_enabled() && w * 2 <= PLAT_SCREEN_W && !plat_layout_custom_bars());
+  } else {
+    if (touch_enabled()) {
+      /* a game (small source) sits between the control bars; the launcher
+       * fills the screen and takes taps directly through lovepsp.touches() */
+      mode = 4;
+      /* the pad hides while the shell's sidebars own the bars */
+      touch_set_visible(w * 2 <= PLAT_SCREEN_W && !plat_layout_custom_bars());
+    }
+    plat_blit_scaled(px, w, h, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_W, PLAT_SCREEN_H, mode, smooth);
   }
-  plat_blit_scaled(px, w, h, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_W, PLAT_SCREEN_H, mode, smooth);
-  if (touch_visible()) touch_draw(g_screen, PLAT_SCREEN_W, PLAT_SCREEN_H, g_pad_frame > g_touch_frame);
+  if (touch_visible()) touch_draw(g_screen, PLAT_SCREEN_W, g_lh, g_pad_frame > g_touch_frame);
   composite_hud();
   g_frame++;
   for (i = 0; i < g_nshots; i++)
-    if (g_shots[i].frame == g_frame) lp_write_png(g_shots[i].path, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_H);
+    if (g_shots[i].frame == g_frame) lp_write_png(g_shots[i].path, g_screen, PLAT_SCREEN_W, g_lh);
   if (g_max_frames >= 0 && g_frame >= g_max_frames) g_quit = 1;
   if (g_headless) return;
   SDL_UpdateTexture(g_tex, NULL, g_screen, PLAT_SCREEN_W * 4);
@@ -259,10 +357,13 @@ void plat_poll(PlatInput *in) {
     const Uint8 *k;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_QUIT) g_quit = 1;
+      else if (e.type == SDL_APP_DIDENTERFOREGROUND
+               || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)) audio_restart();
       else if (e.type == SDL_FINGERDOWN || e.type == SDL_FINGERUP || e.type == SDL_FINGERMOTION) {
         /* front panel only: the Vita reports the rear pad as a second device */
         if (e.tfinger.touchId == SDL_GetTouchDevice(0))
-          touch_finger((long)e.tfinger.fingerId, e.type != SDL_FINGERUP, e.tfinger.x, e.tfinger.y);
+          touch_finger((long)e.tfinger.fingerId, e.type != SDL_FINGERUP, e.tfinger.x * PLAT_SCREEN_W,
+                       e.tfinger.y * (g_ds == 2 ? PLAT_SCREEN_H : g_lh));
       } else if (touch_enabled() && (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP
                                      || e.type == SDL_MOUSEMOTION)) {
         /* desktop / Vita3K: the left mouse button is a finger */
@@ -279,9 +380,9 @@ void plat_poll(PlatInput *in) {
           int ww = PLAT_SCREEN_W, wh = PLAT_SCREEN_H;
           SDL_GetWindowSize(g_win, &ww, &wh);
           lx = (float)mx * PLAT_SCREEN_W / (ww > 0 ? ww : 1);
-          ly = (float)my * PLAT_SCREEN_H / (wh > 0 ? wh : 1);
+          ly = (float)my * (g_ds == 2 ? PLAT_SCREEN_H : g_lh) / (wh > 0 ? wh : 1);
         }
-        touch_finger(-1, down, lx / PLAT_SCREEN_W, ly / PLAT_SCREEN_H);
+        touch_finger(-1, down, lx, ly);
       }
     }
     k = SDL_GetKeyboardState(NULL);
@@ -404,7 +505,38 @@ long plat_free_memory(void) { return -1; }
 void plat_debug(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
+#ifdef __ANDROID__
+  __android_log_vprint(ANDROID_LOG_INFO, "lovepsp", fmt, ap);
+#else
   vfprintf(stderr, fmt, ap);
+#endif
   va_end(ap);
 }
+
+#ifdef __ANDROID__
+/* called from MainActivity / SecondScreen (Java) */
+JNIEXPORT void JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeSetLayout(JNIEnv *env, jclass cls, jint mode) {
+  (void)env; (void)cls;
+  plat_set_layout(mode);
+}
+JNIEXPORT void JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeSetTouch(JNIEnv *env, jclass cls, jint on) {
+  (void)env; (void)cls;
+  touch_set_enabled(on);
+}
+JNIEXPORT jboolean JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeGetBottomScreen(JNIEnv *env, jclass cls, jintArray arr, jint w, jint h) {
+  jint *p;
+  int ok;
+  (void)cls;
+  if (!arr || (*env)->GetArrayLength(env, arr) < w * h) return JNI_FALSE;
+  p = (*env)->GetIntArrayElements(env, arr, NULL);
+  if (!p) return JNI_FALSE;
+  ok = plat_bottom_half((uint32_t *)p, w, h);
+  (*env)->ReleaseIntArrayElements(env, arr, p, 0);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+JNIEXPORT void JNICALL Java_com_nahalewski_gen1recomp_MainActivity_nativeTouch(JNIEnv *env, jclass cls, jint id, jint down, jfloat lx, jfloat ly) {
+  (void)env; (void)cls;
+  touch_finger(id, down, lx, ly);
+}
+#endif
 #endif

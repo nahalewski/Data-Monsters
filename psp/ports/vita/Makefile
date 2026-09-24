@@ -11,7 +11,7 @@ RT := ../../runtime
 B := $(RT)/build/vita
 LUA_DIR := ../../third_party/lua
 LUA_SRC := $(filter-out $(LUA_DIR)/luac.c,$(wildcard $(LUA_DIR)/*.c))
-RT_SRC := main.c obj.c fs.c image.c gfx.c font.c audio.c core.c apu.c vorbis.c plat_common.c plat_host.c touch.c
+RT_SRC := main.c obj.c fs.c image.c gfx.c font.c audio.c core.c apu.c vorbis.c plat_common.c plat_host.c touch.c net.c zipx.c
 OBJS := $(patsubst %.c,$(B)/obj/%.o,$(RT_SRC)) $(patsubst $(LUA_DIR)/%.c,$(B)/obj/lua/%.o,$(LUA_SRC))
 
 TITLE_ID := GEN1RECMP
@@ -21,7 +21,7 @@ CFLAGS := -O2 -Wall -Wno-unused-function -Wno-format-truncation -Wno-stringop-tr
           -Wno-misleading-indentation -fno-strict-aliasing -D__vita__ \
           -I$(LUA_DIR) -I../../third_party/stb -I../../third_party/font8x8 -I$(B) -I$(RT)/src \
           $(shell $(PKGCONFIG) --cflags sdl2) $(LUA_NUMBER_CFLAGS)
-LIBS := $(shell $(PKGCONFIG) --libs sdl2) -lScePower_stub -lm
+LIBS := $(shell $(PKGCONFIG) --libs sdl2) -lScePower_stub -lSceHttp_stub -lSceSsl_stub -lSceNet_stub -lSceNetCtl_stub -lSceSysmodule_stub -lm
 
 all: $(B)/gen1recomp.vpk
 

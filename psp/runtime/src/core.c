@@ -357,9 +357,58 @@ static int c_log(lua_State *L) {
   return 0;
 }
 static int c_screen(lua_State *L) {
-  lua_pushinteger(L, PLAT_SCREEN_W);
-  lua_pushinteger(L, PLAT_SCREEN_H);
+  int w, h;
+  plat_screen_size(&w, &h);
+  lua_pushinteger(L, w);
+  lua_pushinteger(L, h);
   return 2;
+}
+
+void fs_save_real(const char *rel, char *out, size_t n);
+int lp_unzip(const char *zip_path, const char *dest, char *err, size_t errn);
+
+/* lovepsp.http_get(url, out_rel[, token]) -> ok, err: download into the save dir */
+static int c_http_get(lua_State *L) {
+  const char *url = luaL_checkstring(L, 1);
+  const char *rel = luaL_checkstring(L, 2);
+  const char *token = luaL_optstring(L, 3, "");
+  char real[800], err[256] = "", auth[300] = "";
+  if (*token) snprintf(auth, sizeof auth, "token %s", token);
+  fs_save_real(rel, real, sizeof real);
+  if (plat_http_get(url, auth, real, err, sizeof err) != 0) {
+    lua_pushboolean(L, 0); lua_pushstring(L, err); return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+/* lovepsp.unzip(zip_rel, dest_rel) -> files, err */
+static int c_unzip(lua_State *L) {
+  char zip[800], dest[800], err[256] = "";
+  int n;
+  fs_save_real(luaL_checkstring(L, 1), zip, sizeof zip);
+  fs_save_real(luaL_checkstring(L, 2), dest, sizeof dest);
+  n = lp_unzip(zip, dest, err, sizeof err);
+  if (n < 0) { lua_pushnil(L); lua_pushstring(L, err); return 2; }
+  lua_pushinteger(L, n);
+  return 1;
+}
+/* lovepsp.rename(from_rel, to_rel) -> ok */
+static int c_rename(lua_State *L) {
+  char a[800], b[800];
+  fs_save_real(luaL_checkstring(L, 1), a, sizeof a);
+  fs_save_real(luaL_checkstring(L, 2), b, sizeof b);
+  lua_pushboolean(L, rename(a, b) == 0);
+  return 1;
+}
+static int c_network(lua_State *L) { lua_pushboolean(L, plat_has_network()); return 1; }
+/* lovepsp.layout([mode]) -> "single" | "ds" */
+static int c_layout(lua_State *L) {
+  if (!lua_isnoneornil(L, 1)) {
+    const char *m = luaL_checkstring(L, 1);
+    plat_set_layout(!strcmp(m, "ds") ? 1 : !strcmp(m, "dual") ? 2 : 0);
+  }
+  lua_pushstring(L, plat_get_layout() == 1 ? "ds" : plat_get_layout() == 2 ? "dual" : "single");
+  return 1;
 }
 
 static const luaL_Reg core_funcs[] = {
@@ -369,7 +418,8 @@ static const luaL_Reg core_funcs[] = {
   {"time", c_time}, {"sleep", c_sleep}, {"poll", c_poll}, {"setMode", c_setMode},
   {"getMode", c_getMode}, {"present", c_present}, {"os", c_os}, {"baseDir", c_baseDir},
   {"saveDir", c_saveDir}, {"power", c_power}, {"memory", c_memory}, {"log", c_log},
-  {"screen", c_screen}, {"touch", c_touch}, {"touches", c_touches}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
+  {"screen", c_screen}, {"touch", c_touch}, {"touches", c_touches}, {"http_get", c_http_get}, {"unzip", c_unzip},
+  {"rename", c_rename}, {"network", c_network}, {"layout", c_layout}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
 
 int luaopen_lovepsp(lua_State *L) {
   luaL_newlib(L, core_funcs);

@@ -53,6 +53,15 @@ int plat_touch_get(int i, float *x, float *y); /* i-th finger in screen pixels *
 void plat_set_overlay(const uint32_t *px, int w, int h);
 /* side bars the game is fitted between in the touch layout (-1 = default) */
 void plat_set_bars(int left, int right);
+/* screen layout: 0 = one screen, 1 = "DS": the game in the top half of a
+ * double-height logical screen, the controls and panels in the bottom half */
+void plat_set_layout(int mode); /* 0 single, 1 ds, 2 dual (bottom half on a second display) */
+int plat_get_layout(void);
+void plat_screen_size(int *w, int *h);
+int plat_bottom_half(uint32_t *out, int w, int h); /* dual mode: 0xAARRGGBB rows of the bottom half */
+/* network (net.c) */
+int plat_has_network(void);
+int plat_http_get(const char *url, const char *auth, const char *out_path, char *err, size_t errn);
 
 /* audio: the platform pulls stereo int16 frames at PLAT_AUDIO_RATE from cb */
 #define PLAT_AUDIO_RATE 44100

@@ -9,6 +9,8 @@
 #include "stb_truetype.h"
 #include "font8x8_basic.h"
 
+const char *lp_font8x8(int cp) { return (cp >= 0 && cp < 128) ? font8x8_basic[cp] : font8x8_basic[(int)'?']; }
+
 enum { F_BITMAP, F_TTF, F_IMAGE };
 
 typedef struct Glyph {

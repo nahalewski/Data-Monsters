@@ -138,6 +138,8 @@ const char *plat_base_dir(void) { return g_base; }
 const char *plat_save_dir(void) { return g_save; }
 const char *plat_self_path(void) { return g_self; }
 const char *plat_os_name(void) { return "PSP"; }
+int plat_touch(int on) { (void)on; return 0; }
+int plat_touch_get(int i, float *x, float *y) { (void)i; (void)x; (void)y; return 0; }
 
 /* ------------------------------------------------------------ audio */
 #define AUDIO_FRAMES 1024

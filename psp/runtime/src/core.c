@@ -293,6 +293,26 @@ static int c_newFileData(lua_State *L) {
 
 /* ------------------------------------------------------------ platform */
 
+/* lovepsp.touch([on]) -> enabled: the on-screen controls overlay */
+static int c_touch(lua_State *L) {
+  int on = lua_isnoneornil(L, 1) ? -1 : lua_toboolean(L, 1);
+  lua_pushboolean(L, plat_touch(on));
+  return 1;
+}
+/* lovepsp.touches() -> { {x=, y=}, ... } fingers on the screen (logical px) */
+static int c_touches(lua_State *L) {
+  int i = 0;
+  float x, y;
+  lua_newtable(L);
+  while (i < 16 && plat_touch_get(i, &x, &y)) {
+    lua_newtable(L);
+    lua_pushnumber(L, x); lua_setfield(L, -2, "x");
+    lua_pushnumber(L, y); lua_setfield(L, -2, "y");
+    lua_rawseti(L, -2, i + 1);
+    i++;
+  }
+  return 1;
+}
 static int c_time(lua_State *L) { lua_pushnumber(L, plat_time()); return 1; }
 static int c_sleep(lua_State *L) { plat_sleep(luaL_checknumber(L, 1)); return 0; }
 static int c_poll(lua_State *L) {
@@ -349,7 +369,7 @@ static const luaL_Reg core_funcs[] = {
   {"time", c_time}, {"sleep", c_sleep}, {"poll", c_poll}, {"setMode", c_setMode},
   {"getMode", c_getMode}, {"present", c_present}, {"os", c_os}, {"baseDir", c_baseDir},
   {"saveDir", c_saveDir}, {"power", c_power}, {"memory", c_memory}, {"log", c_log},
-  {"screen", c_screen}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
+  {"screen", c_screen}, {"touch", c_touch}, {"touches", c_touches}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
 
 int luaopen_lovepsp(lua_State *L) {
   luaL_newlib(L, core_funcs);

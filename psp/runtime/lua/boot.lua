@@ -718,6 +718,8 @@ love.lovepsp = {
   getScaling = love.graphics._getPresentScaling,
   memory = core.memory,
   power = core.power,
+  touch = core.touch,       -- on-screen controls (Vita): touch(on) / touch()
+  touches = core.touches,   -- fingers on the screen, launcher taps
   log = core.log,
   env = ENV,
 }

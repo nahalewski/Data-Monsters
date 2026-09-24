@@ -16,6 +16,11 @@ static void compute_rect(int sw, int sh, int dw, int dh, int mode,
     int s = dw / sw < dh / sh ? dw / sw : dh / sh;
     if (s < 1) s = 1;
     w = sw * s; h = sh * s;
+  } else if (mode == 4) { /* touch layout: fit between the control bars */
+    int iw = dw - 2 * TOUCH_BAR;
+    if (sw * 2 > dw || iw < sw) { w = sw < dw ? sw : dw; h = sh < dh ? sh : dh; }
+    else if ((long)iw * sh <= (long)dh * sw) { w = iw; h = (int)((long)sh * iw / sw); }
+    else { h = dh; w = (int)((long)sw * dh / sh); }
   }
   if (w > dw) w = dw;
   if (h > dh) h = dh;

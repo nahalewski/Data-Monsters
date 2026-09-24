@@ -10,7 +10,7 @@ F8_DIR := ../third_party/font8x8
 
 LUA_SRC := $(filter-out $(LUA_DIR)/luac.c,$(wildcard $(LUA_DIR)/*.c))
 RT_SRC := src/main.c src/obj.c src/fs.c src/image.c src/gfx.c src/font.c src/audio.c \
-          src/core.c src/apu.c src/vorbis.c src/plat_common.c src/plat_host.c
+          src/core.c src/apu.c src/vorbis.c src/plat_common.c src/plat_host.c src/touch.c
 
 CFLAGS ?= -O2 -g
 CFLAGS += -Wall -Wno-unused-function -Wno-format-truncation -Wno-stringop-truncation -I$(LUA_DIR) -I$(STB_DIR) -I$(F8_DIR) -I$(B) -Isrc \

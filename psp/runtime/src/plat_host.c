@@ -8,8 +8,10 @@
  *   LOVEPSP_FRAMES=N            quit after N presented frames
  *   LOVEPSP_SHOT=N:path[,..]    write the PSP screen as PNG at frame N
  *   LOVEPSP_INPUT=F:BTN:D[,..]  hold BTN (up/down/left/right/cross/circle/
- *                               square/triangle/l/r/start/select) from frame
- *                               F for D frames
+ *                               square/triangle/l/r/start/select, or
+ *                               touch@X@Y for a finger at logical X,Y) from
+ *                               frame F for D frames
+ *   LOVEPSP_TOUCH=1             on-screen touch controls (always on for the Vita)
  *   LOVEPSP_BASE / LOVEPSP_SAVE override the base and save directories
  */
 #ifndef __PSP__
@@ -54,9 +56,10 @@ static SDL_mutex *g_amutex;
 typedef struct { long frame; char path[512]; } Shot;
 static Shot g_shots[64];
 static int g_nshots;
-typedef struct { long from, len; uint32_t btn; } Hold;
+typedef struct { long from, len; uint32_t btn; float tx, ty; } Hold; /* tx >= 0: a synthetic finger */
 static Hold g_holds[256];
 static int g_nholds;
+static long g_pad_frame, g_touch_frame; /* last frame each source was used, for the overlay */
 
 static uint32_t btn_from_name(const char *n) {
   static const struct { const char *n; uint32_t b; } map[] = {
@@ -89,9 +92,15 @@ static void parse_env(void) {
     strncpy(buf, s, sizeof buf - 1); buf[sizeof buf - 1] = 0;
     for (tok = strtok_r(buf, ",", &save); tok && g_nholds < 256; tok = strtok_r(NULL, ",", &save)) {
       char name[32]; long f, d;
-      if (sscanf(tok, "%ld:%31[a-z]:%ld", &f, name, &d) == 3) {
+      if (sscanf(tok, "%ld:%31[a-z@0-9]:%ld", &f, name, &d) == 3) {
+        float tx, ty;
         g_holds[g_nholds].from = f; g_holds[g_nholds].len = d;
-        g_holds[g_nholds].btn = btn_from_name(name);
+        g_holds[g_nholds].tx = g_holds[g_nholds].ty = -1;
+        if (sscanf(name, "touch@%f@%f", &tx, &ty) == 2) {
+          /* touch@X@Y: hold a finger at logical screen coordinates */
+          g_holds[g_nholds].btn = 0;
+          g_holds[g_nholds].tx = tx / PLAT_SCREEN_W; g_holds[g_nholds].ty = ty / PLAT_SCREEN_H;
+        } else g_holds[g_nholds].btn = btn_from_name(name);
         g_nholds++;
       }
     }
@@ -107,6 +116,11 @@ int plat_init(int argc, char **argv) {
   const char *b = getenv("LOVEPSP_BASE"), *sv = getenv("LOVEPSP_SAVE");
   g_headless = getenv("LOVEPSP_HEADLESS") && atoi(getenv("LOVEPSP_HEADLESS"));
   parse_env();
+#ifdef __vita__
+  touch_set_enabled(1);
+#else
+  if (getenv("LOVEPSP_TOUCH")) touch_set_enabled(atoi(getenv("LOVEPSP_TOUCH")));
+#endif
 #if defined(__PSL1GHT__)
   strcpy(g_base, PS3_BASE);
   mkdir(g_base, 0777);
@@ -177,9 +191,22 @@ void plat_shutdown(void) {
   exit(0);
 }
 
+int plat_touch(int on) {
+  if (on >= 0) touch_set_enabled(on);
+  return touch_enabled();
+}
+int plat_touch_get(int i, float *x, float *y) { return touch_get(i, x, y); }
+
 void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
   int i;
+  if (touch_enabled()) {
+    /* a game (small source) sits between the control bars; the launcher
+     * fills the screen and takes taps directly through lovepsp.touches() */
+    mode = 4;
+    touch_set_visible(w * 2 <= PLAT_SCREEN_W);
+  }
   plat_blit_scaled(px, w, h, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_W, PLAT_SCREEN_H, mode, smooth);
+  if (touch_visible()) touch_draw(g_screen, PLAT_SCREEN_W, PLAT_SCREEN_H, g_pad_frame > g_touch_frame);
   g_frame++;
   for (i = 0; i < g_nshots; i++)
     if (g_shots[i].frame == g_frame) lp_write_png(g_shots[i].path, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_H);
@@ -202,7 +229,27 @@ void plat_poll(PlatInput *in) {
   int i;
   if (!g_headless) {
     const Uint8 *k;
-    while (SDL_PollEvent(&e)) if (e.type == SDL_QUIT) g_quit = 1;
+    while (SDL_PollEvent(&e)) {
+      if (e.type == SDL_QUIT) g_quit = 1;
+      else if (e.type == SDL_FINGERDOWN || e.type == SDL_FINGERUP || e.type == SDL_FINGERMOTION) {
+        /* front panel only: the Vita reports the rear pad as a second device */
+        if (e.tfinger.touchId == SDL_GetTouchDevice(0))
+          touch_finger((long)e.tfinger.fingerId, e.type != SDL_FINGERUP, e.tfinger.x, e.tfinger.y);
+      } else if (touch_enabled() && (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP
+                                     || e.type == SDL_MOUSEMOTION)) {
+        /* desktop / Vita3K: the left mouse button is a finger */
+        int down = e.type == SDL_MOUSEBUTTONDOWN
+                   || (e.type == SDL_MOUSEMOTION && (e.motion.state & SDL_BUTTON_LMASK));
+        int mx = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
+        int my = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
+        float lx, ly;
+        if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button != SDL_BUTTON_LEFT) continue;
+        if (e.type == SDL_MOUSEBUTTONUP && e.button.button != SDL_BUTTON_LEFT) continue;
+        if (e.type == SDL_MOUSEMOTION && !down) continue;
+        SDL_RenderWindowToLogical(g_ren, mx, my, &lx, &ly);
+        touch_finger(-1, down, lx / PLAT_SCREEN_W, ly / PLAT_SCREEN_H);
+      }
+    }
     k = SDL_GetKeyboardState(NULL);
     if (k[SDL_SCANCODE_UP]) b |= PB_UP;
     if (k[SDL_SCANCODE_DOWN]) b |= PB_DOWN;
@@ -251,8 +298,17 @@ void plat_poll(PlatInput *in) {
       }
     }
   }
-  for (i = 0; i < g_nholds; i++)
-    if (g_frame >= g_holds[i].from && g_frame < g_holds[i].from + g_holds[i].len) b |= g_holds[i].btn;
+  if (b) g_pad_frame = g_frame;
+  for (i = 0; i < g_nholds; i++) {
+    int on = g_frame >= g_holds[i].from && g_frame < g_holds[i].from + g_holds[i].len;
+    if (g_holds[i].tx >= 0) touch_finger(1000 + i, on, g_holds[i].tx, g_holds[i].ty);
+    else if (on) b |= g_holds[i].btn;
+  }
+  {
+    uint32_t t = touch_buttons();
+    if (t) g_touch_frame = g_frame;
+    b |= t;
+  }
   in->buttons = b;
   if (!g_pad && !g_joy) in->ax = in->ay = 0;
   in->quit = g_quit;

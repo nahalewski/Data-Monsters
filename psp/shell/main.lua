@@ -212,7 +212,8 @@ end
 local SCALING = { "none", "fit", "stretch" }
 local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", stretch = "WIDESCREEN (16:9)" }
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
-local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true }
+local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true,
+                  touch = nil } -- nil: the runtime's default (on for the Vita)
 
 local function saveOptions()
   local parts = {}
@@ -227,6 +228,7 @@ local function applyOptions()
   lovepsp.setScaling(Options.scaling, Options.smooth)
   lovepsp.setSwapAB(Options.swapAB)
   lovepsp.env.POKEPORT_AUDIO_RATE = Options.audioRate
+  if Options.touch ~= nil and lovepsp.touch then pcall(lovepsp.touch, Options.touch) end
   pcall(love.filesystem.write, "lovepsp_scaling.txt", Options.scaling)
 end
 
@@ -248,6 +250,7 @@ local function loadOptions()
     -- "music" was written by builds whose default was off (Lua synth); the
     -- native renderer made it playable, so the setting moved to a new key
     if t.musicNative ~= nil then Options.music = t.musicNative == "true" end
+    if t.touch ~= nil then Options.touch = t.touch == "true" end
   end
   applyOptions()
 end
@@ -268,26 +271,36 @@ local function deleteCache(version)
 end
 
 -- rows: label, value(), change(dir)   (dir 0 = X pressed)
+local OPTIONS_TOP, OPTIONS_ROW_H = 36, 22
 local OPTION_ROWS = {
   { "Screen mode", function() return SCALING_NAMES[Options.scaling] or Options.scaling end,
     function(d) Options.scaling = cycle(SCALING, Options.scaling, d == 0 and 1 or d) end },
   { "Smooth scaling", function() return Options.smooth and "ON" or "OFF" end,
     function() Options.smooth = not Options.smooth end },
-  { "Confirm button", function() return Options.swapAB and "CIRCLE = A, CROSS = B" or "CROSS = A, CIRCLE = B" end,
+  { "Confirm button", function() return Options.swapAB and "CIRCLE=A CROSS=B" or "CROSS=A CIRCLE=B" end,
     function() Options.swapAB = not Options.swapAB end },
-  { "Music", function() return Options.music and "ON (applies on next launch)" or "OFF (applies on next launch)" end,
+  { "Music", function() return Options.music and "ON (next launch)" or "OFF (next launch)" end,
     function() Options.music = not Options.music end },
-  { "Music sample rate", function() return Options.audioRate .. " Hz (applies on next launch)" end,
+  { "Music sample rate", function() return Options.audioRate .. " Hz (next launch)" end,
     function(d) Options.audioRate = cycle(RATES, Options.audioRate, d == 0 and 1 or d) end },
+  { "Touch controls", function()
+      local on = lovepsp.touch and lovepsp.touch()
+      if not on and love._os == "PSP" then return "OFF (Vita only)" end
+      return on and "ON (pad in game, tap launcher)" or "OFF"
+    end,
+    function()
+      if not lovepsp.touch then return end
+      Options.touch = not lovepsp.touch()
+    end },
   { "Mods", function()
       local n = 0
       for _, m in ipairs(Mods.list) do if m.enabled then n = n + 1 end end
       return ("%d of %d enabled (press X)"):format(n, #Mods.list)
     end,
     function(d) if d == 0 then scanMods() Shell.page = "mods" end end },
-  { "Delete imported data", function()
+  { "Delete import", function()
       local v = GAMES[Shell.cursor]
-      return Shell.ready[v] and GameVersion.info(v).displayName .. " (press X)" or "nothing imported for this card"
+      return Shell.ready[v] and GameVersion.info(v).displayName .. " (press X)" or "nothing for this card"
     end,
     function(d)
       local v = GAMES[Shell.cursor]
@@ -840,18 +853,18 @@ end
 local function drawOptions()
   drawChrome("Circle: back")
   love.graphics.setFont(font(12))
-  local y = 40
+  local y = OPTIONS_TOP
   for i, row in ipairs(OPTION_ROWS) do
     local selected = i == Shell.optCursor
     if selected then
       love.graphics.setColor(1, 1, 1, 0.12)
-      love.graphics.rectangle("fill", 8, y - 4, SCREEN_W - 16, 32)
+      love.graphics.rectangle("fill", 8, y - 3, SCREEN_W - 16, OPTIONS_ROW_H)
     end
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print((selected and "> " or "  ") .. row[1], 16, y)
     love.graphics.setColor(0.6, 0.9, 1, 1)
-    love.graphics.print("< " .. row[2]() .. " >", 32, y + 13)
-    y = y + 36
+    love.graphics.print("< " .. row[2]() .. " >", 176, y)
+    y = y + OPTIONS_ROW_H
   end
   local ok, mem, free = pcall(lovepsp.memory)
   if ok then
@@ -908,11 +921,66 @@ function love.load()
   end
 end
 
+-- Taps on the launcher pages (Vita touch screen, or the mouse on a desktop
+-- with LOVEPSP_TOUCH=1).  Only the first finger counts; a tap is the frame
+-- it lands.  Tapping a card selects it, tapping the selected card presses X;
+-- the header line stands in for the Triangle / Square / Circle hints.
+local touchWasDown = false
+local function tapAt(x, y)
+  if Shell.page == "message" then
+    Shell.page = Shell.messageBack
+    return
+  end
+  if y < 24 then
+    if Shell.page == "cards" then
+      love.gamepadpressed(nil, x < SCREEN_W * 0.72 and "y" or "x")
+    else
+      love.gamepadpressed(nil, "b")
+    end
+    return
+  end
+  if Shell.page == "cards" then
+    for i in ipairs(GAMES) do
+      local cx, cy, cw, ch = cardRect(i)
+      if x >= cx and x < cx + cw and y >= cy and y < cy + ch + 16 then
+        if Shell.cursor == i then love.gamepadpressed(nil, "a") else Shell.cursor = i end
+        return
+      end
+    end
+  elseif Shell.page == "options" then
+    local i = math.floor((y - OPTIONS_TOP + 3) / OPTIONS_ROW_H) + 1
+    if i >= 1 and i <= #OPTION_ROWS then
+      if Shell.optCursor == i then
+        love.gamepadpressed(nil, x < 176 and "dpleft" or "a")
+      else
+        Shell.optCursor = i
+      end
+    end
+  elseif Shell.page == "mods" and #Mods.list > 0 then
+    local rowH, top, visible = 22, 34, 7
+    local first = math.max(1, math.min(Mods.cursor - 3, #Mods.list - visible + 1))
+    local i = first + math.floor((y - top + 3) / rowH)
+    if i >= first and i <= math.min(#Mods.list, first + visible - 1) then
+      if Mods.cursor == i then love.gamepadpressed(nil, "a") else Mods.cursor = i end
+    end
+  end
+end
+
+local function pollTaps()
+  if not lovepsp.touches then return end
+  local ok, touches = pcall(lovepsp.touches)
+  local t = ok and touches and touches[1]
+  if t and not touchWasDown then tapAt(t.x, t.y) end
+  touchWasDown = t ~= nil and t ~= false
+end
+
 function love.update(dt)
   if Shell.page == "game" then
     return require("src.core.PlatformHooks").update(Game, dt)
   elseif Shell.page == "import" then
     stepImport()
+  else
+    pollTaps()
   end
 end
 

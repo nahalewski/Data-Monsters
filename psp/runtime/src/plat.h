@@ -46,6 +46,10 @@ const char *plat_save_dir(void);   /* writable save root */
 const char *plat_self_path(void);  /* path of the running EBOOT.PBP (archive) */
 const char *plat_os_name(void);
 
+/* on-screen touch controls (Vita); -1 = query */
+int plat_touch(int on);
+int plat_touch_get(int i, float *x, float *y); /* i-th finger in screen pixels */
+
 /* audio: the platform pulls stereo int16 frames at PLAT_AUDIO_RATE from cb */
 #define PLAT_AUDIO_RATE 44100
 typedef void (*plat_audio_cb)(int16_t *out, int frames);

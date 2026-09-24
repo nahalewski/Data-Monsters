@@ -1,7 +1,20 @@
 #ifndef PLAT_COMMON_H
 #define PLAT_COMMON_H
 #include <stdint.h>
+/* mode 4 = touch layout: a small source sits in a 240x216 box between two
+ * 120 px bars for the on-screen controls (touch.c) */
+#define TOUCH_BAR 120
 void plat_blit_scaled(const uint32_t *src, int sw, int sh,
                       uint32_t *dst, int dstride, int dw, int dh,
                       int mode, int smooth);
+
+/* touch overlay (touch.c; SDL backends only) */
+void touch_set_enabled(int on);
+int touch_enabled(void);
+void touch_finger(long id, int down, float nx, float ny); /* nx, ny in 0..1 of the screen */
+uint32_t touch_buttons(void);
+void touch_draw(uint32_t *screen, int w, int h, int dim);
+void touch_set_visible(int on); /* the overlay only shows while a game is between the bars */
+int touch_visible(void);
+int touch_get(int i, float *x, float *y);
 #endif

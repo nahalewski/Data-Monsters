@@ -4,7 +4,7 @@
 
 | Model | RAM | Status |
 | --- | --- | --- |
-| PSP-2000 (Slim), **PSP-3000** (incl. 3001), PSP Go (N1000), PSP-E1000 (Street) | 64 MB | **Supported.** Red / Blue / Yellow fit with room to spare (≈8–11 MB of Lua heap in play). Gold and Silver (≈20 MB) are worth trying; Crystal (≈26 MB) is borderline. |
+| PSP-2000 (Slim), **PSP-3000** (incl. 3001), PSP Go (N1000), PSP-E1000 (Street) | 64 MB | **Supported.** Red / Blue / Yellow fit with room to spare (≈8–11 MB of Lua heap in play). Gold runs (verified in PPSSPP on the 64 MB model: 58–60 fps, ≈21 MB heap); Silver should match it; Crystal (≈26 MB) is untested and borderline. |
 | PSP-1000 (Phat) | 32 MB | Gen 1 only, and untested: the import and the game need ≈11 MB of Lua heap plus the runtime; Gen 2/3 cannot fit. |
 | Any model, official firmware | — | Not possible: homebrew needs custom firmware. |
 | FireRed / LeafGreen on any PSP | — | Not possible: the engine needs ≈81 MB for them. |
@@ -79,6 +79,14 @@ Launcher: D-pad/nub to pick a card, **X** play/import, **Triangle** options,
 - Screen mode / smooth scaling
 - Confirm button (Cross = A or Circle = A)
 - Music ON/OFF (leave OFF on PSP, see above) and the music sample rate
+- Mods: upstream's example mods ship in the EBOOT, all **off** by default;
+  toggle them here (X). Your own mods go in `save/pokemon-love2d/mods/<mod>/`
+  (a folder with `manifest.json`, Lua source only) and appear in the same
+  list. Mods that need an extra asset pack (Mystery Dungeon, Link to the
+  Past) cannot be used: those packs come from the desktop launcher's
+  importers, which are not part of this port. Only get mods from the
+  project's official sources (the GitHub repo and its Discord) —
+  gen1recomp.com is an impersonating site upstream warns about.
 - Delete imported data for the selected game (saves are kept)
 
 Settings persist in `save/pokemon-love2d/psp_options.lua`. Advanced settings

@@ -63,6 +63,8 @@ local Shell = {
 }
 local Game
 local fonts = {}
+local drawChrome, font -- defined with the drawing code below
+local Mods, scanMods    -- the mods page, defined after the options
 
 ---------------------------------------------------------------- helpers
 
@@ -159,6 +161,7 @@ local function refresh()
     loadArt(v)
   end
   scanRoms()
+  pcall(scanMods)
   collectgarbage()
 end
 
@@ -238,6 +241,12 @@ local OPTION_ROWS = {
     function() Options.music = not Options.music end },
   { "Music sample rate", function() return Options.audioRate .. " Hz (applies on next launch)" end,
     function(d) Options.audioRate = cycle(RATES, Options.audioRate, d == 0 and 1 or d) end },
+  { "Mods", function()
+      local n = 0
+      for _, m in ipairs(Mods.list) do if m.enabled then n = n + 1 end end
+      return ("%d of %d enabled (press X)"):format(n, #Mods.list)
+    end,
+    function(d) if d == 0 then scanMods() Shell.page = "mods" end end },
   { "Delete imported data", function()
       local v = GAMES[Shell.cursor]
       return Shell.ready[v] and GameVersion.info(v).displayName .. " (press X)" or "nothing imported for this card"
@@ -250,6 +259,95 @@ local OPTION_ROWS = {
       end
     end },
 }
+
+---------------------------------------------------------------- mods
+
+-- Mods live in mods/ (the archive ships upstream's examples; players add
+-- their own under save/pokemon-love2d/mods/).  The engine enables every
+-- discovered non-experimental mod unless options.lua says otherwise, so
+-- the shell records "off" for anything it has not seen before: the vanilla
+-- game stays vanilla until a mod is switched on here.
+Mods = { list = {}, cursor = 1 }
+
+local function readManifest(id)
+  local raw = love.filesystem.read("mods/" .. id .. "/manifest.json")
+  if not raw then return nil end
+  local ok, Json = pcall(require, "src.link.Json")
+  local m = ok and Json.decode(raw) or nil
+  if type(m) ~= "table" then return nil end
+  return m
+end
+
+scanMods = function()
+  local SaveData = require("src.core.SaveData")
+  local options = SaveData.loadOptions()
+  local changed = false
+  Mods.list = {}
+  for _, id in ipairs(love.filesystem.getDirectoryItems("mods")) do
+    local m = readManifest(id)
+    if m then
+      if SaveData.modEnabled(options, m.id or id) == nil then
+        SaveData.setModEnabled(options, m.id or id, false)
+        changed = true
+      end
+      Mods.list[#Mods.list + 1] = {
+        id = m.id or id, name = m.name or id, version = m.version or "",
+        description = m.description or "", games = m.games,
+        enabled = SaveData.modEnabled(options, m.id or id) == true,
+      }
+    end
+  end
+  table.sort(Mods.list, function(a, b) return a.name < b.name end)
+  if changed then SaveData.saveOptions(options) end
+  if Mods.cursor > #Mods.list then Mods.cursor = math.max(1, #Mods.list) end
+end
+
+local function toggleMod(entry)
+  local SaveData = require("src.core.SaveData")
+  local options = SaveData.loadOptions()
+  entry.enabled = not entry.enabled
+  SaveData.setModEnabled(options, entry.id, entry.enabled)
+  SaveData.saveOptions(options)
+end
+
+local function drawMods()
+  drawChrome("X toggle   Circle back")
+  love.graphics.setFont(font(12))
+  if #Mods.list == 0 then
+    love.graphics.setColor(0.8, 0.8, 0.85, 1)
+    love.graphics.printf("No mods found. Put a mod folder (with manifest.json) under\n"
+      .. "save/pokemon-love2d/mods/ on the memory stick.", 16, 44, SCREEN_W - 32)
+    return
+  end
+  local rowH, top, visible = 22, 34, 7
+  local first = math.max(1, math.min(Mods.cursor - 3, #Mods.list - visible + 1))
+  local y = top
+  for i = first, math.min(#Mods.list, first + visible - 1) do
+    local m = Mods.list[i]
+    local selected = i == Mods.cursor
+    if selected then
+      love.graphics.setColor(1, 1, 1, 0.12)
+      love.graphics.rectangle("fill", 8, y - 3, SCREEN_W - 16, rowH)
+    end
+    love.graphics.setColor(m.enabled and { 0.45, 0.95, 0.55, 1 } or { 0.6, 0.6, 0.66, 1 })
+    love.graphics.print(m.enabled and "[ON] " or "[  ] ", 16, y)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(m.name .. "  " .. m.version, 56, y)
+    y = y + rowH
+  end
+  local m = Mods.list[Mods.cursor]
+  love.graphics.setColor(0.8, 0.8, 0.85, 1)
+  love.graphics.printf(m.description, 16, top + visible * rowH + 4, SCREEN_W - 32)
+  love.graphics.setColor(0.6, 0.6, 0.66, 1)
+  love.graphics.printf("Changes apply the next time a game starts.", 16, SCREEN_H - 52, SCREEN_W - 32)
+end
+
+local function modsPress(button)
+  if button == "dpup" then Mods.cursor = (Mods.cursor - 2) % math.max(1, #Mods.list) + 1
+  elseif button == "dpdown" then Mods.cursor = Mods.cursor % math.max(1, #Mods.list) + 1
+  elseif button == "a" and Mods.list[Mods.cursor] then toggleMod(Mods.list[Mods.cursor])
+  elseif button == "b" or button == "y" then Shell.page = "options" end
+end
 
 ---------------------------------------------------------------- import
 
@@ -405,7 +503,7 @@ end
 
 ---------------------------------------------------------------- drawing
 
-local function font(size)
+font = function(size)
   if not fonts[size] then fonts[size] = love.graphics.newFont(size) end
   return fonts[size]
 end
@@ -456,7 +554,7 @@ local function drawBackground()
   love.graphics.circle("fill", SCREEN_W - 40, SCREEN_H - 20, 26)
 end
 
-local function drawChrome(subtitle)
+drawChrome = function(subtitle)
   drawBackground()
   love.graphics.setColor(0.80, 0.14, 0.18, 1)
   love.graphics.rectangle("fill", 0, 0, SCREEN_W, 24)
@@ -680,6 +778,7 @@ function love.draw()
   if Shell.page == "import" then return drawImport() end
   if Shell.page == "message" then return drawMessage() end
   if Shell.page == "options" then return drawOptions() end
+  if Shell.page == "mods" then return drawMods() end
   drawCards()
 end
 
@@ -751,6 +850,7 @@ function love.gamepadpressed(joystick, button)
   end
   if Shell.page == "cards" then return cardsPress(button) end
   if Shell.page == "options" then return optionsPress(button) end
+  if Shell.page == "mods" then return modsPress(button) end
 end
 
 function love.gamepadreleased(joystick, button)

@@ -85,6 +85,13 @@ for d in fonts skins touch logo; do
   [ -d "$UPSTREAM_DIR/assets/$d" ] && cp -r "$UPSTREAM_DIR/assets/$d" "$GAME/assets/$d"
 done
 for e in "${EXCLUDE[@]}"; do rm -rf "${GAME:?}/$e"; done
+# upstream's example mods ride along (GPL); players add their own under
+# save/pokemon-love2d/mods/ on the memory stick
+cp -r "$UPSTREAM_DIR/mods" "$GAME/mods"
+# the gallery is one level too deep for discovery (by upstream's design);
+# lift it so each example is a card on the shell's Mods page, off by default
+for m in "$GAME"/mods/examples/example_*; do [ -d "$m" ] && mv "$m" "$GAME/mods/"; done
+rm -rf "$GAME/mods/examples"
 cp "$UPSTREAM_DIR/LICENSE.MD" "$GAME/LICENSE-gen1recomp.md"
 cat > "$GAME/lovepsp/build_info.lua" <<EOF
 return { upstream = "$UPSTREAM_COMMIT", built = "$(date -u +%Y-%m-%dT%H:%MZ)" }
@@ -98,7 +105,7 @@ while IFS= read -r -d '' f; do
   rel="${f#$GAME/}"
   if ! "$LUAC" -g "$f" "$f.tmp" "$rel"; then fail=1; continue; fi
   mv "$f.tmp" "$f"
-done < <(find "$GAME" -name '*.lua' -print0)
+done < <(find "$GAME" -path "$GAME/mods" -prune -o -name '*.lua' -print0)
 [ "$fail" = 0 ] || { echo "bytecode compilation failed" >&2; exit 1; }
 
 python3 "$HERE/runtime/tools/mkpak.py" "$BUILD/game.pak" "$GAME"

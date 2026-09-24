@@ -85,6 +85,17 @@ The engine is drawn at 160x144 on the CPU and scaled by the display driver,
 which is what makes the CPU rasterizer feasible on a 333 MHz MIPS core.
 `lovepsp.log` next to the EBOOT records errors and load timings.
 
+## Other consoles
+
+The same runtime builds for the **PS Vita / Vita TV** (`ports/vita`, SDL2
+on vitasdk, `.vpk`) and the **PS3** (`ports/ps3`, SDL2 on PSL1GHT, `.pkg` for
+CFW/HEN and RPCS3 plus a `GEN1RECMP/` folder for `/dev_hdd0/game/`).
+`build_all.sh` (or `build_all.bat` on Windows) builds every target whose
+toolchain is installed and zips them into `dist/gen1recomp-ports.zip`. The
+PS3 build packs Lua source instead of bytecode (big-endian PPU). Neither
+console build has been run on hardware or an emulator from this machine;
+the PSP build has (PPSSPP).
+
 ## Building
 
 Requirements: bash, python3, gcc + SDL2 dev headers (host tools), and the

@@ -21,6 +21,11 @@
 int _newlib_heap_size_user = 256 * 1024 * 1024;
 #define VITA_BASE "ux0:data/gen1recomp/"
 #endif
+#ifdef __PSL1GHT__
+#include <sysutil/sysutil.h>
+/* installed from the .pkg (or the folder) as /dev_hdd0/game/GEN1RECMP/ */
+#define PS3_BASE "/dev_hdd0/game/GEN1RECMP/USRDIR/"
+#endif
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +39,7 @@ int lp_write_png(const char *path, const uint32_t *px, int w, int h);
 
 static SDL_Window *g_win;
 static SDL_GameController *g_pad;
+static SDL_Joystick *g_joy; /* raw pad when no controller mapping exists (PS3) */
 static SDL_Renderer *g_ren;
 static SDL_Texture *g_tex;
 static uint32_t g_screen[PLAT_SCREEN_W * PLAT_SCREEN_H];
@@ -101,7 +107,10 @@ int plat_init(int argc, char **argv) {
   const char *b = getenv("LOVEPSP_BASE"), *sv = getenv("LOVEPSP_SAVE");
   g_headless = getenv("LOVEPSP_HEADLESS") && atoi(getenv("LOVEPSP_HEADLESS"));
   parse_env();
-#ifdef __vita__
+#if defined(__PSL1GHT__)
+  strcpy(g_base, PS3_BASE);
+  mkdir(g_base, 0777);
+#elif defined(__vita__)
   strcpy(g_base, VITA_BASE);
   mkdir("ux0:data", 0777);
   mkdir(g_base, 0777);
@@ -123,8 +132,10 @@ int plat_init(int argc, char **argv) {
   mkdir(g_save, 0777);
   /* the host build reads its archive from EBOOT.PBP or game.pak next to it;
    * the Vita's lives inside the installed app (app0:) */
-#ifdef __vita__
+#if defined(__vita__)
   strcpy(g_self, "app0:game.pak");
+#elif defined(__PSL1GHT__)
+  snprintf(g_self, sizeof g_self, "%sgame.pak", g_base);
 #else
   if (getenv("LOVEPSP_ARCHIVE")) strncpy(g_self, getenv("LOVEPSP_ARCHIVE"), sizeof g_self - 1);
   else snprintf(g_self, sizeof g_self, "%sEBOOT.PBP", g_base);
@@ -136,13 +147,17 @@ int plat_init(int argc, char **argv) {
   }
   if (!g_headless) {
     g_win = SDL_CreateWindow("lovepsp", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                             PLAT_SCREEN_W * 2, PLAT_SCREEN_H * 2,
-#ifdef __vita__
-                             SDL_WINDOW_FULLSCREEN);
+#if defined(__PSL1GHT__)
+                             1280, 720, SDL_WINDOW_FULLSCREEN);
+#elif defined(__vita__)
+                             PLAT_SCREEN_W * 2, PLAT_SCREEN_H * 2, SDL_WINDOW_FULLSCREEN);
 #else
-                             SDL_WINDOW_RESIZABLE);
+                             PLAT_SCREEN_W * 2, PLAT_SCREEN_H * 2, SDL_WINDOW_RESIZABLE);
 #endif
-    if (SDL_NumJoysticks() > 0 && SDL_IsGameController(0)) g_pad = SDL_GameControllerOpen(0);
+    if (SDL_NumJoysticks() > 0) {
+      if (SDL_IsGameController(0)) g_pad = SDL_GameControllerOpen(0);
+      else g_joy = SDL_JoystickOpen(0);
+    }
     g_ren = SDL_CreateRenderer(g_win, -1, SDL_RENDERER_PRESENTVSYNC);
     if (!g_ren) g_ren = SDL_CreateRenderer(g_win, -1, 0);
     SDL_RenderSetLogicalSize(g_ren, PLAT_SCREEN_W, PLAT_SCREEN_H);
@@ -215,12 +230,31 @@ void plat_poll(PlatInput *in) {
         if (SDL_GameControllerGetButton(g_pad, map[j].b)) b |= map[j].m;
       in->ax = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
       in->ay = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
+    } else if (g_joy) {
+      /* raw button order of SDL's PSL1GHT pad: select L3 R3 start up right
+       * down left L2 R2 L1 R1 triangle circle cross square */
+      static const uint32_t order[16] = {
+        PB_SELECT, 0, 0, PB_START, PB_UP, PB_RIGHT, PB_DOWN, PB_LEFT,
+        0, 0, PB_LTRIGGER, PB_RTRIGGER, PB_TRIANGLE, PB_CIRCLE, PB_CROSS, PB_SQUARE};
+      int j, n = SDL_JoystickNumButtons(g_joy);
+      for (j = 0; j < n && j < 16; j++) if (SDL_JoystickGetButton(g_joy, j)) b |= order[j];
+      if (SDL_JoystickNumAxes(g_joy) >= 2) {
+        in->ax = SDL_JoystickGetAxis(g_joy, 0) / 32767.0f;
+        in->ay = SDL_JoystickGetAxis(g_joy, 1) / 32767.0f;
+      }
+      if (SDL_JoystickNumHats(g_joy) > 0) {
+        Uint8 hat = SDL_JoystickGetHat(g_joy, 0);
+        if (hat & SDL_HAT_UP) b |= PB_UP;
+        if (hat & SDL_HAT_DOWN) b |= PB_DOWN;
+        if (hat & SDL_HAT_LEFT) b |= PB_LEFT;
+        if (hat & SDL_HAT_RIGHT) b |= PB_RIGHT;
+      }
     }
   }
   for (i = 0; i < g_nholds; i++)
     if (g_frame >= g_holds[i].from && g_frame < g_holds[i].from + g_holds[i].len) b |= g_holds[i].btn;
   in->buttons = b;
-  if (!g_pad) in->ax = in->ay = 0;
+  if (!g_pad && !g_joy) in->ax = in->ay = 0;
   in->quit = g_quit;
 }
 
@@ -239,8 +273,10 @@ void plat_sleep(double s) {
 const char *plat_base_dir(void) { return g_base; }
 const char *plat_save_dir(void) { return g_save; }
 const char *plat_self_path(void) { return g_self; }
-#ifdef __vita__
+#if defined(__vita__)
 const char *plat_os_name(void) { return "Vita"; }
+#elif defined(__PSL1GHT__)
+const char *plat_os_name(void) { return "PS3"; }
 #else
 const char *plat_os_name(void) { return "PSP"; }
 #endif

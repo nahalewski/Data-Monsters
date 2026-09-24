@@ -135,6 +135,18 @@ def main():
     text(px, w, glyphs, "GEN 1 PORT", 100, 50, 2, cream)
     text(px, w, glyphs, "for PS Vita", 100, 76, 1, (210, 200, 210, 255))
     png(os.path.join(vita, "startup.png"), w, h, px)
+
+    # PS3 XMB icon 320x176
+    ps3 = os.path.join(out, "ps3")
+    os.makedirs(ps3, exist_ok=True)
+    w, h = 320, 176
+    px = canvas(w, h, (60, 24, 40), (24, 12, 30))
+    rect(px, w, 0, 0, w, 5, red)
+    cartridge(px, w, 24, 40, 4, red, cream)
+    text(px, w, glyphs, "GEN 1 PORT", 110, 60, 3, cream)
+    text(px, w, glyphs, "for PS3", 110, 96, 2, (210, 200, 210, 255))
+    text(px, w, glyphs, "Ported by nahalewski", 110, 130, 1, (220, 200, 150, 255))
+    png(os.path.join(ps3, "ICON0.PNG"), w, h, px)
     print("wrote", out)
 
 

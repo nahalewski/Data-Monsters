@@ -59,6 +59,12 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
   @Override
   protected void onCreate(Bundle state) {
     super.onCreate(state);
+    // the window covers the camera cutout too, so the frame is centred on the panel
+    if (Build.VERSION.SDK_INT >= 28) {
+      android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+      lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+      getWindow().setAttributes(lp);
+    }
     sensors = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
     if (Build.VERSION.SDK_INT >= 30) hinge = sensors.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE);
     displays = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);

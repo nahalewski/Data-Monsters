@@ -65,7 +65,7 @@ void plat_set_layout(int mode); /* 0 single, 1 ds, 2 dual (bottom half on a seco
  * skin uses its frames' heights, e.g. 320 + 360) */
 void plat_set_split(int top, int bottom);
 void plat_get_split(int *top, int *bottom);
-#define PLAT_MAX_LH 720
+#define PLAT_MAX_LH 1100   /* a portrait phone screen at 480 wide */
 /* foldable hinge angle in degrees from the host app, -1 = no hinge sensor */
 void plat_set_hinge(float degrees);
 /* open a web page in the host's browser (Android); 0 when unsupported */

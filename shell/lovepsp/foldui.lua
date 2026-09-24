@@ -181,7 +181,7 @@ local hits = {}
 local function hit(x, y, w, h, fn) hits[#hits + 1] = { x = x, y = y, w = w, h = h, fn = fn } end
 
 local ROW_H = 16
-local function listRows() return math.max(1, math.floor((state.panel.h - 28 - 54 - 16 - 4) / ROW_H)) end
+local function listRows() return math.max(1, math.floor((174 - 28 - 54 - 16 - 4) / ROW_H)) end
 local function visibleRows() return listRows() end
 
 local function clampScroll(n)
@@ -269,8 +269,9 @@ local function tapAt(x, y)
     if TABS[state.tab] == "GAMES" and not state.settings and not state.help then state.opts.primary() end
     return
   end
-  local lx, ly = x, y - state.base - p.y
-  if lx < p.x or ly < 0 or lx >= p.x + p.w or ly >= p.h then return end
+  local sc = state.pscale or 1
+  local lx, ly = (x - (state.pox or p.x)) / sc, (y - state.base - (state.poy or p.y)) / sc
+  if lx < 0 or ly < 0 or lx >= 260 or ly >= 174 then return end
   for i = #hits, 1, -1 do
     local h = hits[i]
     if lx >= h.x and lx < h.x + h.w and ly >= h.y and ly < h.y + h.h then h.fn() return end
@@ -659,8 +660,11 @@ local function drawHelp(p)
   hit(x, y, w, h, function() end)
 end
 
+-- the panel is designed in a fixed space (the 480-wide shell's screen) and
+-- scaled to fit whatever the bottom screen measures on this display
+local VPANEL = { x = 0, y = 0, w = 260, h = 174 }
 local function drawPanel()
-  local p = state.panel
+  local p = VPANEL
   local t = theme()
   hits = {}
   -- the theme tints the background; the panel keeps the Deluxe navy
@@ -715,7 +719,7 @@ local function drawCart()
   love.graphics.rectangle("fill", x, y + h - 22, w, 22)
   love.graphics.setColor(0.85, 0.85, 0.9, 1)
   love.graphics.setFont(font(6))
-  love.graphics.printf("Based on the Pokemon Gen 1 Recompilation Project\nby BOIS CLUB GAMES, LLC - github.com/bryanthaboi/gen1recomp", x, y + h - 20, w, "center")
+  love.graphics.printf("Based on gen1recomp by BOIS CLUB GAMES, LLC\ngithub.com/bryanthaboi/gen1recomp", x, y + h - 20, w, "center")
 end
 
 local function render()
@@ -744,7 +748,8 @@ local function render()
       V.drawSprite(ox + b.x * sc - qw * scale / 2, state.base + y0 + b.y * sc - qh * scale / 2, b.sprite, scale)
     end
   end
-  love.graphics.translate(0, state.base + state.panel.y)
+  love.graphics.translate(state.pox or state.panel.x, state.base + (state.poy or state.panel.y))
+  love.graphics.scale(state.pscale or 1, state.pscale or 1)
   drawPanel()
   V.hdEnd()
   love.graphics.setCanvas()
@@ -782,6 +787,10 @@ function M.update(dt)
     if ox then
       local c = V.SKIN_BOTTOM.cut
       state.panel = { x = ox + c[1] * sc, y = y0 + c[2] * sc, w = c[3] * sc, h = c[4] * sc }
+      local p = state.panel
+      state.pscale = math.min(p.w / 260, p.h / 174)
+      state.pox = p.x + (p.w - 260 * state.pscale) / 2
+      state.poy = p.y + (p.h - 174 * state.pscale) / 2
     end
   end
   -- the launcher window sits in the top screen

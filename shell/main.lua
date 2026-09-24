@@ -1162,17 +1162,28 @@ local function drawLid()
     love.graphics.clear(0.02, 0.02, 0.03, 1)
     if okV and V.hdBegin then V.hdBegin(k) end
   end
-  -- full width; a taller screen gets the shell's grey above and below
+  -- the whole lid, as large as fits, on the shell's grey; a portrait
+  -- screen shows it turned on its side (a closed 3DS standing up)
   local iw, ih = lidImage:getDimensions()
-  local s = sw / iw
   love.graphics.setColor(0.16, 0.16, 0.17, 1)
   love.graphics.rectangle("fill", 0, 0, sw, sh)
+  local portrait = sh > sw * 1.1
+  local aw, ah = sw, sh
+  if portrait then aw, ah = sh, sw end
+  local s = math.min(aw / iw, ah / ih)
+  love.graphics.push()
+  if portrait then
+    love.graphics.translate(sw, 0)
+    love.graphics.rotate(math.pi / 2)
+  end
+  local x, y = math.floor((aw - iw * s) / 2), math.floor((ah - ih * s) / 2)
   if okV and V.drawSkin then
-    V.drawSkin("lid.png", 0, math.floor((sh - ih * s) / 2), s)
+    V.drawSkin("lid.png", x, y, s)
   else
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(lidImage, 0, math.floor((sh - ih * s) / 2), 0, s, s)
+    love.graphics.draw(lidImage, x, y, 0, s, s)
   end
+  love.graphics.pop()
   if lovepsp.setOverlay then
     if okV and V.hdEnd then V.hdEnd() end
     love.graphics.setCanvas()
@@ -1213,12 +1224,7 @@ local function foldCheck()
   if love._os ~= "Android" or not lovepsp.hinge then return end
   local hinge = lovepsp.hinge()
   local folded = hinge >= 0 and hinge < 60
-  -- the lid is a landscape picture: only on a landscape display (the
-  -- physical one; the logical frame is always taller than wide here)
-  if folded and lovepsp.display then
-    local ok, dw, dh = pcall(lovepsp.display)
-    if ok and dw and dh and dw > 0 and dh > dw * 1.1 then folded = false end
-  end
+
   if folded then
     if not Shell.lidSnooze then lidShow() end
   else

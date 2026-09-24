@@ -175,7 +175,11 @@ local function hudScale()
   if not lovepsp.display then return 1 end
   local ok, dw = pcall(lovepsp.display)
   if not ok or not dw or dw <= 0 then return 1 end
-  return math.max(1, math.min(3, math.floor(dw / SCREEN_W)))
+  local k = math.max(1, math.min(3, math.floor(dw / SCREEN_W)))
+  -- a canvas side stays within the runtime's limit
+  local _, sh = lovepsp.screen()
+  while k > 1 and sh * k > 4000 do k = k - 1 end
+  return k
 end
 M.hudScale = hudScale
 
@@ -185,28 +189,35 @@ local function fullSplit()
   local ok, dw, dh = pcall(lovepsp.display)
   if not ok or not dw or dw <= 0 or not dh or dh <= 0 then return nil end
   local lh = math.floor(SCREEN_W * dh / dw + 0.5)
-  if lh < 2 * 64 or lh > 720 then return nil end
+  if lh < 2 * 64 or lh > 1100 then return nil end
   local top = math.floor(lh / 2)
   return top, lh - top
 end
 M.fullSplit = fullSplit
 
--- the frames, placed: the top frame's bottom edge sits on the hinge (a
--- shorter half crops the frame's top), the bottom frame hangs from it
+-- the frames, placed whole: each shell fits inside its half (never
+-- cropped or stretched), centred, the top shell's bottom edge on the
+-- hinge and the bottom shell hanging from it
+local function fitHalf(img, halfH)
+  local iw, ih = img:getDimensions()
+  local sc = SCREEN_W / iw
+  if halfH and ih * sc > halfH then sc = halfH / ih end
+  return math.floor((SCREEN_W - iw * sc) / 2), sc, ih * sc
+end
 local function placeTop(skin, topH)
   local top = SKIN_TOP[skin]
   local img = top and skinImage(top.file)
   if not img then return nil end
-  local ox, sc = framePlacement(img)
-  local _, ih = img:getDimensions()
-  local y0 = 0
-  if fullSplit() and topH then y0 = topH - math.floor(ih * sc + 0.5) end
+  local ft, fb = fullSplit()
+  local ox, sc, h = fitHalf(img, ft and topH or nil)
+  local y0 = (ft and topH) and (topH - math.floor(h + 0.5)) or 0
   return ox, sc, y0, img, top
 end
 local function placeBottom()
   local img = skinImage(SKIN_BOTTOM.file)
   if not img then return nil end
-  local ox, sc = framePlacement(img)
+  local ft, fb = fullSplit()
+  local ox, sc = fitHalf(img, ft and fb or nil)
   return ox, sc, 0, img
 end
 M.placeTop, M.placeBottom = placeTop, placeBottom
@@ -264,7 +275,9 @@ local function ttf(px)
   end
   return ttfFonts[px] or nil
 end
-local function hdPx(size) return (size >= 18 and size or 9) * hdK end
+-- bitmap sizes below 18 all drew 8 px glyphs; the TrueType face honours
+-- them (a little larger, it is thinner)
+local function hdPx(size) return (size >= 18 and size or (math.max(6, math.min(size, 12)) + 2)) * hdK end
 local function hdPrint(text, x, y, r, sx, sy)
   local f = ttf(hdPx(M.curFontSize or 8))
   if not f then return realPrint(text, x, y, r, sx, sy) end

@@ -706,7 +706,7 @@ static int g_newCanvas(lua_State *L) {
   int w = (int)luaL_optnumber(L, 1, g_back ? g_back->w : PLAT_SCREEN_W);
   int h = (int)luaL_optnumber(L, 2, g_back ? g_back->h : PLAT_SCREEN_H);
   Tex *t;
-  if (w > 2048 || h > 2048) return luaL_error(L, "Cannot create canvas: size %dx%d exceeds the 2048 limit", w, h);
+  if (w > 4096 || h > 4096) return luaL_error(L, "Cannot create canvas: size %dx%d exceeds the 4096 limit", w, h);
   t = tex_new(w, h);
   if (!t) return luaL_error(L, "Cannot create canvas: out of memory (%dx%d)", w, h);
   t->is_canvas = 1;

@@ -721,6 +721,71 @@ local function drawSkinFrames()
   end
 end
 
+-- the bottom screen while no panel is open: the game's Pokemon animated
+-- (assets/idle, one-row sprite sheets); Yellow's Pikachu surfs
+local idle = { sheets = {}, manifest = nil }
+local function idleAnim(version)
+  if idle.manifest == nil then
+    local ok, m = pcall(function() return love.filesystem.load("assets/idle/manifest.lua")() end)
+    idle.manifest = ok and type(m) == "table" and m or false
+  end
+  local entry = idle.manifest and idle.manifest[version]
+  if not entry then return nil end
+  if idle.sheets[version] == nil then
+    local ok, img = pcall(love.graphics.newImage, "assets/idle/" .. entry.file)
+    if ok then
+      img:setFilter("nearest", "nearest")
+      local w, h = img:getDimensions()
+      local fw = math.floor(w / entry.frames)
+      local quads = {}
+      for i = 0, entry.frames - 1 do quads[i + 1] = love.graphics.newQuad(i * fw, 0, fw, h, w, h) end
+      idle.sheets[version] = { img = img, quads = quads, fw = fw, fh = h, fps = entry.fps or 5, frames = entry.frames }
+    else
+      idle.sheets[version] = false
+    end
+  end
+  return idle.sheets[version] or nil
+end
+
+local function drawIdle()
+  local img = skinImage(SKIN_BOTTOM.file)
+  if not img then return end
+  local ox, sc = framePlacement(img)
+  local c = SKIN_BOTTOM.cut
+  local x, y, w, h = ox + c[1] * sc, c[2] * sc, c[3] * sc, c[4] * sc
+  local version = (lovepsp.env and lovepsp.env.LOVEPSP_IDLE) or (state.opts and state.opts.version) or "red"
+  local t = love.timer.getTime()
+  local ct = currentTheme()
+  love.graphics.setColor(ct.bg[1], ct.bg[2], ct.bg[3], 1)
+  love.graphics.rectangle("fill", x, y, w, h)
+  local anim = idleAnim(version)
+  local surf = version == "yellow"
+  if surf then
+    -- the sea: three bands of waves rolling under Pikachu
+    for band = 0, 2 do
+      local by = y + h * (0.62 + band * 0.12)
+      love.graphics.setColor(0.16 + band * 0.06, 0.40 + band * 0.08, 0.85 - band * 0.10, 1)
+      love.graphics.rectangle("fill", x, by, w, h - (by - y))
+      love.graphics.setColor(0.85, 0.93, 1, 0.9)
+      local step = 14
+      for wx = x - step, x + w, step do
+        local px = wx + (t * (30 + band * 12)) % step
+        local py = by + math.sin((px + t * 40) / 9) * 2
+        if px >= x and px + 6 <= x + w then love.graphics.rectangle("fill", px, py - 1, 6, 2) end
+      end
+    end
+  end
+  if not anim then return end
+  local scale = math.max(1, math.floor((h * 0.55) / anim.fh))
+  if anim.fh * scale > h * 0.7 then scale = math.max(1, scale - 1) end
+  local frame = math.floor(t * anim.fps) % anim.frames + 1
+  local dx = x + (w - anim.fw * scale) / 2
+  local dy = y + (h - anim.fh * scale) / 2
+  if surf then dy = y + h * 0.62 - anim.fh * scale + 14 + math.sin(t * 2.5) * 3 end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(anim.img, anim.quads[frame], math.floor(dx), math.floor(dy), 0, scale, scale)
+end
+
 -- the game goes into the top frame's screen cutout (aspect fit)
 local function applyGameRect()
   local top = state.skin and SKIN_TOP[state.skin]
@@ -946,7 +1011,10 @@ local function render()
   love.graphics.clear(0, 0, 0, 0)
   love.graphics.setBlendMode("alpha")
   love.graphics.translate(0, state.base)
-  if state.skin then drawSkinFrames() end
+  if state.skin then
+    drawSkinFrames()
+    if not state.left and not state.right then drawIdle() end
+  end
   if not state.skin and (state.ds or state.circleTimer > 0 or state.left or state.right) then
     if not state.left then circle(18, CIRCLE_Y, "mods") end
     if not state.right then circle(SCREEN_W - 18, CIRCLE_Y, "menu") end

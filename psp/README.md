@@ -215,6 +215,23 @@ reopens its audio device when the app regains focus.
 
 ### Android
 
+The Fold app always runs as the 3DS: it starts on the closed lid (the top
+shell filling the screen; a tap, any button, or unfolding the phone opens
+it), then shows the foldable launcher below, and plays in the DS layout
+(game in the top shell's screen, the bottom shell with its button sprites
+below).  The PSP-style card launcher is not used on Android.  While a game
+runs and no panel is open, the bottom screen shows the game's Pokemon
+animated (`shell/assets/idle`, one-row sprite sheets made from the animated
+Generation V sprites in github.com/PokeAPI/sprites by
+`tools/gif2sheet.sh`); Yellow's Pikachu surfs.  The mods panel and the
+START menu cover it while they are open.
+
+**Pokemon Green**: the Japanese Green shares Blue's version exclusives
+(Blue is its western form), so Green runs on Blue's engine and imported
+data with its own cart, theme and saves; the Blue ROM import serves both
+cards.  The Japanese ROM itself is not importable (its layout and text
+differ), and the title screen still reads Blue Version.
+
 On a foldable held open, the launcher itself is the 3DS: the selected
 game's cartridge on the top screen (`shell/assets/carts`, art supplied by
 the port's author; left / right or the stick changes the game, tapping the

@@ -35,6 +35,23 @@ local COLS = 4
 local lovepsp = love.lovepsp
 local core = require("lovepsp")
 local GameVersion = require("src.core.GameVersion")
+-- Pokemon Green: the Japanese release shares Blue's version exclusives and
+-- Blue is its western form, so Green runs on Blue's engine and imported data
+-- (the same Blue ROM import serves both) with its own cart, theme and saves.
+-- The Japanese ROM itself is not importable: its layout and text differ.
+do
+  local b = GameVersion.VERSIONS.blue
+  if b and not GameVersion.VERSIONS.green then
+    local g = {}
+    for k, v in pairs(b) do g[k] = v end
+    g.id, g.label, g.displayName, g.launcherName = "green", "Green", "Pokemon Green", "Green"
+    g.saveSuffix = "_green"
+    GameVersion.VERSIONS.green = g
+    GameVersion.ORDER[#GameVersion.ORDER + 1] = "green"
+    local isBlue = GameVersion.isBlue
+    function GameVersion.isBlue() return isBlue() or GameVersion.current == "green" end
+  end
+end
 
 -- The cards on offer: everything upstream can import, in its order.
 -- LOVEPSP_GAMES in env.txt narrows or reorders the list.
@@ -66,8 +83,7 @@ local VitaUI -- lovepsp.vitaui while a game runs with touch (Vita)
 local FoldUI -- lovepsp.foldui: the launcher on Android foldables (3DS skin)
 local Options -- the port's options table, defined with the options page below
 local function foldActive()
-  return FoldUI ~= nil and love._os == "Android" and lovepsp.layout and lovepsp.layout() == "ds"
-    and Options.skin ~= "off" and Shell.page ~= "game" and Shell.page ~= "lid"
+  return FoldUI ~= nil and love._os == "Android" and Shell.page ~= "game" and Shell.page ~= "lid"
 end
 local fonts = {}
 local drawChrome, font -- defined with the drawing code below
@@ -177,6 +193,9 @@ local function scanRoms()
               if not Shell.roms[version] then
                 Shell.roms[version] = { path = path, name = name, sha1 = sha }
               end
+              if (version == "blue" or version == "green") and not Shell.roms.green then
+                Shell.roms.green = Shell.roms[version]
+              end
             else
               Shell.unknown[#Shell.unknown + 1] = name
             end
@@ -239,7 +258,7 @@ local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", str
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
 Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true,
                   touch = nil, -- nil: the runtime's default (on for the Vita)
-                  layout = nil, -- nil: the runtime's default; "ds": game on top, controls below
+                  layout = love._os == "Android" and "ds" or nil, -- "ds": game on top, controls below
                   pad = nil,    -- nil: the runtime's default (drawn pad on Android, off on the Vita)
                   skin = "gbc", -- DS layout skin: gbc (3DS, G1R sticker, GBC border), sticker, plain, small, off
                   theme = "auto" } -- panel colours: auto (the game's), gameboy, red, ... leafgreen
@@ -347,7 +366,7 @@ local OPTION_ROWS = {
     end,
     function(d)
       if love._os ~= "Android" then return end
-      Options.skin = cycle({ "gbc", "sticker", "plain", "small", "off" }, Options.skin, d == 0 and 1 or d)
+      Options.skin = cycle({ "gbc", "sticker", "plain", "small" }, Options.skin, d == 0 and 1 or d)
     end },
   { "On-screen pad", function()
       if love._os == "PSP" or not lovepsp.touchPad then return "n/a" end
@@ -1109,6 +1128,7 @@ end
 -- Foldables (Android): the closed 3DS lid fills the screen until the
 -- phone is unfolded (hinge angle) or any button / tap, then the launcher.
 local lidImage
+local lidCanvas
 local function drawLid()
   love.graphics.clear(0.02, 0.02, 0.03, 1)
   if lidImage == nil then
@@ -1116,19 +1136,37 @@ local function drawLid()
     lidImage = ok and img or false
     if ok then img:setFilter("linear", "linear") end
   end
-  if lidImage then
-    local iw, ih = lidImage:getDimensions()
-    local s = math.min(SCREEN_W / iw, SCREEN_H / ih)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(lidImage, (SCREEN_W - iw * s) / 2, (SCREEN_H - ih * s) / 2, 0, s, s)
+  if not lidImage then return end
+  -- the closed lid fills the whole physical screen: it goes through the
+  -- overlay layer (screen-sized), not the launcher's 480x272 window
+  local sw, sh = SCREEN_W, SCREEN_H
+  if lovepsp.screen then local ok, w, h = pcall(lovepsp.screen) if ok and w then sw, sh = w, h end end
+  if lovepsp.setOverlay then
+    if not lidCanvas or lidCanvas:getWidth() ~= sw or lidCanvas:getHeight() ~= sh then
+      lidCanvas = love.graphics.newCanvas(sw, sh)
+    end
+    love.graphics.push("all")
+    love.graphics.setCanvas(lidCanvas)
+    love.graphics.clear(0.02, 0.02, 0.03, 1)
   end
-  love.graphics.setFont(font(9))
-  love.graphics.setColor(0.7, 0.7, 0.75, 0.8 + 0.2 * math.sin(love.timer.getTime() * 3))
-  love.graphics.printf("Unfold to play  -  or press any button", 0, SCREEN_H - 14, SCREEN_W, "center")
+  -- full width; a taller screen gets the shell's grey above and below
+  local iw, ih = lidImage:getDimensions()
+  local s = sw / iw
+  love.graphics.setColor(0.16, 0.16, 0.17, 1)
+  love.graphics.rectangle("fill", 0, 0, sw, sh)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(lidImage, 0, math.floor((sh - ih * s) / 2), 0, s, s)
+  if lovepsp.setOverlay then
+    love.graphics.setCanvas()
+    love.graphics.pop()
+    lovepsp.setOverlay(lidCanvas)
+  end
 end
 
 local function lidDone()
   Shell.page = "cards"
+  if lovepsp.setOverlay then lovepsp.setOverlay(nil) end
+  if FoldUI and FoldUI.swallowTouch then FoldUI.swallowTouch() end
 end
 
 function love.load()
@@ -1173,8 +1211,9 @@ function love.load()
     end
   end
   -- a foldable that is not open yet shows the lid first
-  local hinge = lovepsp.hinge and lovepsp.hinge() or -1
-  if love._os == "Android" and hinge >= 0 and hinge < 60 then Shell.page = "lid" end
+  -- the Fold app always starts on the closed lid (the top shell); a tap, any
+  -- button, or unfolding the phone opens it
+  if love._os == "Android" then Shell.page = "lid" Shell.lidHinge = lovepsp.hinge and lovepsp.hinge() or -1 end
   log(("launcher: ready in %.2fs (%.2fs since power-on)"):format(
     love.timer.getTime() - t0, love.timer.getTime()))
   -- boot_once.txt: written before a restart (Vita menu QUIT -> "launcher",
@@ -1254,8 +1293,10 @@ end
 
 function love.update(dt)
   if Shell.page == "lid" then
+    -- unfolding: the hinge was seen closed on this page and is open now
     local hinge = lovepsp.hinge and lovepsp.hinge() or -1
-    if hinge >= 60 then lidDone() end
+    if hinge >= 0 and hinge < 60 then Shell.lidHinge = hinge end
+    if hinge >= 60 and Shell.lidHinge and Shell.lidHinge >= 0 and Shell.lidHinge < 60 then lidDone() end
     if lovepsp.touches then
       local ok, t = pcall(lovepsp.touches)
       if ok and t and t[1] then lidDone() end

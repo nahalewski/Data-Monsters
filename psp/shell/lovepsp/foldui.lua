@@ -814,4 +814,6 @@ function M.detach()
 end
 
 M.say = say
+-- the touch that opened the lid must not also tap the panel
+function M.swallowTouch() state.wasDown = true end
 return M

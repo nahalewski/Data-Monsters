@@ -126,10 +126,11 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
     return landscape && lastHinge > 30 && lastHinge < 160;
   }
 
+  /** the Fold app: always the DS layout (top screen game, bottom screen the
+   *  3DS shell) whatever the hinge says; a second display takes the bottom half */
   private void applyLayout() {
-    int mode = 0;
+    int mode = 1;
     if (second != null) mode = 2;
-    else if (foldedLandscape()) mode = 1;
     nativeSetLayout(mode);
   }
 }

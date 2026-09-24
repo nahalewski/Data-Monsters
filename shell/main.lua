@@ -1174,13 +1174,27 @@ end
 
 -- the lid covers whatever was on screen while the phone is closed (the
 -- cover screen); opening the phone returns to it
+local function coverScreen()
+  if not lovepsp.display then return false end
+  local ok, dw, dh = pcall(lovepsp.display)
+  return ok and dw and dh and dh > 0 and dw / dh > 1.8 or false
+end
 local function lidShow()
   if Shell.page == "lid" then return end
   Shell.lidReturn = Shell.page
   Shell.page = "lid"
+  -- the frame takes the display's shape so the lid reaches the edges
+  local okV, V = pcall(require, "lovepsp.vitaui")
+  if okV and V.fullSplit and lovepsp.layout then
+    local ft, fb = V.fullSplit()
+    if ft then lovepsp.layout(nil, ft, fb) end
+  end
 end
 local function lidDone(byHand)
+  -- on the cover screen only unfolding opens the lid
+  if byHand and coverScreen() then return end
   Shell.page = Shell.lidReturn or "cards"
+  if VitaUI and VitaUI.relayout then VitaUI.relayout() end
   Shell.lidReturn = nil
   Shell.lidSnooze = byHand or false   -- dismissed by hand: stay open until the phone really opens
   if lovepsp.setOverlay then lovepsp.setOverlay(nil) end

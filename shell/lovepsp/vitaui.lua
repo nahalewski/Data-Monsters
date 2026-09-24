@@ -1212,6 +1212,7 @@ function M.detach()
 end
 
 function M.isOpen() return state.left or state.right end
+function M.relayout() state.skin = nil end
 
 function M.update(dt)
   if not state.attached then return end
@@ -1220,6 +1221,14 @@ function M.update(dt)
     state.ds = state.sh > PANEL_H
     if lovepsp.split and state.ds then local top = lovepsp.split() state.base = top
     else state.base = state.sh - PANEL_H end
+  end
+  -- a display change (cover screen <-> inner screen) re-applies the layout
+  if lovepsp.display then
+    local okD, dw, dh = pcall(lovepsp.display)
+    if okD and (dw ~= state.dispW or dh ~= state.dispH) then
+      state.dispW, state.dispH = dw, dh
+      state.skin = nil
+    end
   end
   -- skin: only in the DS layout; the drawn pad gives way to the frame
   -- the 3DS skin is for Android foldables: only there, only in the DS layout

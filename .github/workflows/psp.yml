@@ -2,9 +2,9 @@ name: PSP port
 
 on:
   push:
-    paths: ["psp/**", ".github/workflows/psp.yml"]
+    paths: [".github/workflows/psp.yml"]
   pull_request:
-    paths: ["psp/**", ".github/workflows/psp.yml"]
+    paths: [".github/workflows/psp.yml"]
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
         run: apk add --no-cache bash git python3 sdl2-dev build-base
       - name: Host smoke test of the runtime
         run: |
-          cd psp/runtime
+          cd runtime
           make -f Makefile.host -j"$(nproc)"
           cd test/smoke && rm -rf save
           LOVEPSP_HEADLESS=1 LOVEPSP_BASE="$PWD" LOVEPSP_FRAMES=30 ../../build/host/lovepsp | tee smoke.txt
@@ -25,9 +25,9 @@ jobs:
       - name: Build EBOOT.PBP
         run: |
           git config --global --add safe.directory '*'
-          python3 psp/runtime/tools/mkicons.py psp/psp-assets
-          bash psp/build.sh
+          python3 runtime/tools/mkicons.py psp-assets
+          bash build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: gen1recomp-psp
-          path: psp/dist/gen1recomp
+          path: dist/gen1recomp

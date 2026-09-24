@@ -5,28 +5,26 @@ Thumbs.db
 
 # Scratch / logs
 *.log
-
-# Node
-node_modules/
-shared-doc.json
-
 # PSP port build output
-psp/build/
-psp/dist/
-psp/runtime/build/
-psp/runtime/src/*.o
-psp/third_party/lua/*.o
-psp/runtime/test/smoke/save/
-psp/runtime/test/smoke/shot.png
-psp/build_*/
-psp/ports/ps3/build/
-psp/ports/ps3/pkgfiles/
-psp/ports/ps3/*.self
-psp/ports/ps3/*.pkg
-psp/mods_extra/
-psp/ports/android/out/
-psp/ports/android/gen/
-psp/ports/android/jni/SDL
-psp/ports/android/debug.keystore
-psp/ports/android/res/mipmap-xxhdpi/
-psp/build_android/
+build/
+dist/
+runtime/build/
+runtime/src/*.o
+third_party/lua/*.o
+runtime/test/smoke/save/
+runtime/test/smoke/shot.png
+build_*/
+ports/ps3/build/
+ports/ps3/pkgfiles/
+ports/ps3/*.self
+ports/ps3/*.pkg
+mods_extra/
+ports/android/out/
+ports/android/gen/
+ports/android/jni/SDL
+ports/android/debug.keystore
+ports/android/res/mipmap-xxhdpi/
+build_android/
+build_ps3/
+build_f/
+ports/android/jni/SDL/

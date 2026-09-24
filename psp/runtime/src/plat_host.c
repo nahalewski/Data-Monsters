@@ -274,7 +274,13 @@ void plat_poll(PlatInput *in) {
         if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button != SDL_BUTTON_LEFT) continue;
         if (e.type == SDL_MOUSEBUTTONUP && e.button.button != SDL_BUTTON_LEFT) continue;
         if (e.type == SDL_MOUSEMOTION && !down) continue;
-        SDL_RenderWindowToLogical(g_ren, mx, my, &lx, &ly);
+        {
+          /* window -> logical (SDL_RenderWindowToLogical needs 2.0.18; the PS3's SDL2 is older) */
+          int ww = PLAT_SCREEN_W, wh = PLAT_SCREEN_H;
+          SDL_GetWindowSize(g_win, &ww, &wh);
+          lx = (float)mx * PLAT_SCREEN_W / (ww > 0 ? ww : 1);
+          ly = (float)my * PLAT_SCREEN_H / (wh > 0 ? wh : 1);
+        }
         touch_finger(-1, down, lx / PLAT_SCREEN_W, ly / PLAT_SCREEN_H);
       }
     }

@@ -330,28 +330,90 @@ local function readManifest(id)
   return m
 end
 
+-- Reading 140 manifests from the Memory Stick costs seconds, so the scan
+-- result is cached in mods_cache.lua keyed by the folder listing: the cache
+-- is rebuilt only when a mod folder appears or disappears.
+local MODS_CACHE_FILE = "mods_cache.lua"
+
+local function serializeMods(key, entries)
+  local out = { "return {key=", ("%q"):format(key), ",entries={" }
+  for _, e in ipairs(entries) do
+    out[#out + 1] = ("{dir=%q,id=%q,name=%q,version=%q,description=%q"):format(
+      e.dir, e.id, e.name, e.version, e.description)
+    if type(e.games) == "table" then
+      local g = {}
+      for _, v in ipairs(e.games) do g[#g + 1] = ("%q"):format(tostring(v)) end
+      out[#out + 1] = ",games={" .. table.concat(g, ",") .. "}"
+    end
+    out[#out + 1] = "},"
+  end
+  out[#out + 1] = "}}"
+  return table.concat(out)
+end
+
+local function modEntries()
+  Shell.rawModScan = true
+  local names = love.filesystem.getDirectoryItems("mods")
+  Shell.rawModScan = false
+  table.sort(names)
+  local key = table.concat(names, "\n")
+  local chunk = love.filesystem.load(MODS_CACHE_FILE)
+  local ok, t = pcall(chunk or function() end)
+  if ok and type(t) == "table" and t.key == key and type(t.entries) == "table" then
+    return t.entries
+  end
+  local entries = {}
+  for _, dir in ipairs(names) do
+    local m = readManifest(dir)
+    if m then
+      entries[#entries + 1] = {
+        dir = dir, id = tostring(m.id or dir), name = tostring(m.name or dir),
+        version = tostring(m.version or ""), description = tostring(m.description or ""),
+        games = type(m.games) == "table" and m.games or nil,
+      }
+    end
+  end
+  pcall(love.filesystem.write, MODS_CACHE_FILE, serializeMods(key, entries))
+  return entries
+end
+
 scanMods = function()
   local SaveData = require("src.core.SaveData")
   local options = SaveData.loadOptions()
   local changed = false
   Mods.list = {}
-  for _, id in ipairs(love.filesystem.getDirectoryItems("mods")) do
-    local m = readManifest(id)
-    if m then
-      if SaveData.modEnabled(options, m.id or id) == nil then
-        SaveData.setModEnabled(options, m.id or id, false)
-        changed = true
-      end
-      Mods.list[#Mods.list + 1] = {
-        id = m.id or id, name = m.name or id, version = m.version or "",
-        description = m.description or "", games = m.games,
-        enabled = SaveData.modEnabled(options, m.id or id) == true,
-      }
+  for _, e in ipairs(modEntries()) do
+    if SaveData.modEnabled(options, e.id) == nil then
+      SaveData.setModEnabled(options, e.id, false)
+      changed = true
     end
+    Mods.list[#Mods.list + 1] = {
+      dir = e.dir, id = e.id, name = e.name, version = e.version, games = e.games,
+      description = e.description,
+      enabled = SaveData.modEnabled(options, e.id) == true,
+    }
   end
   table.sort(Mods.list, function(a, b) return a.name < b.name end)
   if changed then SaveData.saveOptions(options) end
   if Mods.cursor > #Mods.list then Mods.cursor = math.max(1, #Mods.list) end
+end
+
+-- The engine's loader reads every folder under mods/ at boot; with the
+-- community mods bundled that is 140 manifests off the Memory Stick for
+-- mods that are off.  While a game runs, the listing only shows the mods
+-- enabled for it (Shell.enabledModDirs, set by bootGame).
+do
+  local rawItems = love.filesystem.getDirectoryItems
+  love.filesystem.getDirectoryItems = function(path, ...)
+    local items = rawItems(path, ...)
+    if Shell.enabledModDirs and not Shell.rawModScan
+        and (path == "mods" or path == "mods/") then
+      local out = {}
+      for _, n in ipairs(items) do if Shell.enabledModDirs[n] then out[#out + 1] = n end end
+      return out
+    end
+    return items
+  end
 end
 
 -- The loader reads a per-game entry (options.modsByVersion[version][id])
@@ -576,6 +638,16 @@ local function bootGame(version)
   require("src.core.GameSpeed").setAllowed(nil)
   pcall(precompileCache, version)
   installBytecodeLoad()
+  -- only the mods enabled for this game are visible to the loader
+  do
+    scanMods()
+    local SaveData = require("src.core.SaveData")
+    local options = SaveData.loadOptions()
+    Shell.enabledModDirs = {}
+    for _, m in ipairs(Mods.list) do
+      if SaveData.modEnabled(options, m.id, version) == true then Shell.enabledModDirs[m.dir] = true end
+    end
+  end
   love.window.setTitle(GameVersion.info().displayName)
   -- the engine lays out one 160x144 Game Boy screen; lovepsp scales the
   -- window to the PSP's 480x272 panel on present

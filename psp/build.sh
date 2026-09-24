@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-BUILD="$HERE/build"
+BUILD="${BUILD_DIR:-$HERE/build}"
 GAME="$BUILD/game"
 DIST="$HERE/dist/gen1recomp"
 mkdir -p "$BUILD" "$DIST"
@@ -49,7 +49,9 @@ echo "upstream: $UPSTREAM_DIR @ $UPSTREAM_COMMIT"
 
 # ------------------------------------------------------------ 2. host tools
 make -C "$HERE/runtime" -f Makefile.host -j"$(nproc)" >/dev/null
-LUAC="$HERE/runtime/build/host/lpluac"
+# LUAC may point at a compiler built with a different number configuration
+# (see LUA_NUMBER_CFLAGS in runtime/Makefile); the bytecode must match it
+LUAC="${LUAC:-$HERE/runtime/build/host/lpluac}"
 
 # ------------------------------------------------------------ 3. game tree
 rm -rf "$GAME"

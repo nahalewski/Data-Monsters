@@ -1,4 +1,5 @@
 /* Scaling blitter shared by both platform backends. */
+#include <stdint.h>
 #include <string.h>
 #include "plat_common.h"
 
@@ -60,9 +61,10 @@ void plat_blit_scaled(const uint32_t *src, int sw, int sh,
     int n = ow > 1024 ? 1024 : ow;
     for (x = 0; x < n; x++) {
       /* source span covered by destination pixel x, 16.16 fixed */
-      long a = ((long)x * sw << 16) / ow, b = ((long)(x + 1) * sw << 16) / ow;
+      /* 64-bit: x*sw<<16 overflows the PSP's 32-bit long */
+      int64_t a = ((int64_t)x * sw << 16) / ow, b = ((int64_t)(x + 1) * sw << 16) / ow;
       int ia = (int)(a >> 16);
-      long edge = (long)(ia + 1) << 16;
+      int64_t edge = (int64_t)(ia + 1) << 16;
       x0m[x] = ia;
       if (b > edge && ia + 1 < sw) {
         x1m[x] = ia + 1;
@@ -70,9 +72,9 @@ void plat_blit_scaled(const uint32_t *src, int sw, int sh,
       } else { x1m[x] = ia; xw[x] = 0; }
     }
     for (y = 0; y < oh; y++) {
-      long a = ((long)y * sh << 16) / oh, b = ((long)(y + 1) * sh << 16) / oh;
+      int64_t a = ((int64_t)y * sh << 16) / oh, b = ((int64_t)(y + 1) * sh << 16) / oh;
       int ia = (int)(a >> 16), ib = ia, yw = 0;
-      long edge = (long)(ia + 1) << 16;
+      int64_t edge = (int64_t)(ia + 1) << 16;
       const uint32_t *r0, *r1;
       uint32_t *d = dst + (long)(oy + y) * dstride + ox;
       if (b > edge && ia + 1 < sh) { ib = ia + 1; yw = (int)(((b - edge) * 256) / (b - a)); }

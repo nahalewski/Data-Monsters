@@ -521,6 +521,8 @@ do
     return s
   end
   function data.hash(alg, v) return core.hash(alg, bytes(v)) end
+  -- lovepsp extension: hash a file from the virtual filesystem in chunks
+  function data.hashFile(alg, path) return core.hashFile(alg, path) end
   function data.encode(container, fmt, v, lineLength)
     local s = core.encode(fmt, bytes(v))
     if lineLength and lineLength > 0 and fmt == "base64" then
@@ -713,9 +715,12 @@ love.handlers = setmetatable({
 end })
 
 ---------------------------------------------------------------- run loop
+local perfFrames, perfT0 = 0, 0
+local perfUpdate, perfDraw, perfPresent = 0, 0, 0
 function love.run()
   if love.load then love.load(arg, arg) end
   if love.timer then love.timer.step() end
+  perfT0 = love.timer.getTime()
   local dt = 0
   return function()
     love.event.pump()
@@ -728,12 +733,39 @@ function love.run()
       love.handlers[name](a, b, c, d, e, f)
     end
     dt = love.timer.step()
+    -- performance trace in lovepsp.log: one line every 300 frames
+    perfFrames = perfFrames + 1
+    if perfFrames >= 300 then
+      local now = love.timer.getTime()
+      core.log(("perf: %.1f fps at t=%ds, Lua heap %d KiB; per frame update %.1f ms, draw %.1f ms, present %.1f ms")
+        :format(300 / (now - perfT0), now // 1, collectgarbage("count") // 1,
+                perfUpdate / 300 * 1000, perfDraw / 300 * 1000, perfPresent / 300 * 1000))
+      -- LOVEPSP_PROFILE=1: the shell wraps engine entry points and reports
+      -- their per-frame cost through this table
+      if LOVEPSP_PROF then
+        local parts = {}
+        for name, t in pairs(LOVEPSP_PROF) do
+          parts[#parts + 1] = ("%s %.1f ms (%d calls)"):format(name, t.time / 300 * 1000, t.calls)
+          t.time, t.calls = 0, 0
+        end
+        table.sort(parts)
+        core.log("prof: " .. table.concat(parts, "; "))
+      end
+      perfFrames, perfT0 = 0, now
+      perfUpdate, perfDraw, perfPresent = 0, 0, 0
+    end
+    local t0 = core.time()
     if love.update then love.update(dt) end
+    local t1 = core.time()
+    perfUpdate = perfUpdate + (t1 - t0)
     if love.graphics.isActive() then
       love.graphics.origin()
       love.graphics.clear(love.graphics.getBackgroundColor())
       if love.draw then love.draw() end
+      local t2 = core.time()
+      perfDraw = perfDraw + (t2 - t1)
       love.graphics.present()
+      perfPresent = perfPresent + (core.time() - t2)
     end
   end
 end

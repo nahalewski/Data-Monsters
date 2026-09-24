@@ -18,16 +18,22 @@ EBOOT's `DATA.PSAR`.
 
 1. Copy the `gen1recomp/` folder from a release (or `psp/dist/gen1recomp`
    after building) to `ms0:/PSP/GAME/` on a PSP with custom firmware.
-2. Put your own canonical US cartridge dump of Pokemon Red, Blue or Yellow
-   into `PSP/GAME/gen1recomp/roms/` (`.gb`). Only the ROMs whose SHA-1 the
-   engine accepts are recognised; no game data ships with the port.
+2. Put your own canonical US cartridge dump next to the `EBOOT.PBP` (or in
+   `roms/` under it); any file name works, games are recognised by SHA-1.
+   Only the dumps upstream accepts are recognised — Red, Blue, Yellow, Gold,
+   Silver, Crystal, FireRed and LeafGreen (US) — and no game data ships with
+   the port. Anything else (Emerald, Ruby, Sapphire, Green, ROM hacks,
+   other regions) is listed as "Not supported" on the launcher: the engine
+   has no support for those games.
 3. Launch **gen1recomp for PSP** from the XMB. The launcher shows one
    cartridge card per game: move between them with the D-pad or nub and
    press **X** to import (once per game — it decodes the ROM into the
-   engine's private cache under `save/pokemon-love2d/<version>/`, which
-   takes a while on the PSP), then **X** again to play. **Triangle** opens
-   the options page (screen scaling, smoothing, confirm button, music
-   sample rate, delete imported data); **Square** rescans `roms/`.
+   engine's private cache under `save/pokemon-love2d/<version>/`; about
+   three minutes for a Gen 1 game on the PSP), then **X** again to play.
+   After an import the card shows the game's own logo and mascot, decoded
+   from your ROM. **Triangle** opens the options page (screen mode,
+   smoothing, confirm button, music on/off, music sample rate, delete
+   imported data); **Square** rescans for ROMs.
 
 Saves live in `PSP/GAME/gen1recomp/save/pokemon-love2d/`, in the same layout
 as the desktop build.

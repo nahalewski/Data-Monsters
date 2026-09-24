@@ -276,6 +276,32 @@ char *fs_read(const char *path, size_t *len) {
 
 int fs_exists(const char *path) { Found f; return resolve(path, &f); }
 
+/* feed a file to cb in 64 KiB pieces without loading it whole */
+int fs_stream(const char *path, void (*cb)(void *, const unsigned char *, size_t), void *ud) {
+  Found f;
+  static unsigned char buf[65536];
+  if (!resolve(path, &f) || f.is_dir) return 0;
+  if (f.kind == M_PAK) {
+    uint32_t left = f.ent->size;
+    if (fseek(g_pak, g_pak_base + (long)f.ent->off, SEEK_SET)) return 0;
+    while (left) {
+      size_t n = left < sizeof buf ? left : sizeof buf;
+      if (fread(buf, 1, n, g_pak) != n) return 0;
+      cb(ud, buf, n);
+      left -= (uint32_t)n;
+    }
+    return 1;
+  }
+  {
+    FILE *fp = fopen(f.real, "rb");
+    size_t n;
+    if (!fp) return 0;
+    while ((n = fread(buf, 1, sizeof buf, fp)) > 0) cb(ud, buf, n);
+    fclose(fp);
+    return 1;
+  }
+}
+
 static void save_path(const char *raw, char *out, size_t n) {
   char path[600];
   normalize(raw, path, sizeof path);

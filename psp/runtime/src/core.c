@@ -138,6 +138,49 @@ static int c_hash(lua_State *L) {
   return 1;
 }
 
+/* lovepsp.hashFile(alg, path): stream a VFS file through the digest */
+typedef struct HashCtx { int alg; uint32_t s[8]; unsigned char buf[64]; size_t n; uint64_t total; } HashCtx;
+static void hash_chunk(void *ud, const unsigned char *d, size_t len) {
+  HashCtx *c = (HashCtx *)ud;
+  void (*block)(uint32_t *, const unsigned char *) = c->alg == 0 ? md5_block : c->alg == 1 ? sha1_block : sha256_block;
+  c->total += len;
+  while (len) {
+    size_t take = 64 - c->n;
+    if (take > len) take = len;
+    memcpy(c->buf + c->n, d, take);
+    c->n += take; d += take; len -= take;
+    if (c->n == 64) { block(c->s, c->buf); c->n = 0; }
+  }
+}
+int fs_stream(const char *path, void (*cb)(void *, const unsigned char *, size_t), void *ud);
+static int c_hashFile(lua_State *L) {
+  const char *alg = luaL_checkstring(L, 1);
+  const char *path = luaL_checkstring(L, 2);
+  HashCtx c;
+  unsigned char out[32];
+  unsigned char pad[128];
+  int words, big, k, padlen;
+  uint64_t bits;
+  memset(&c, 0, sizeof c);
+  if (!strcmp(alg, "md5")) { uint32_t s[4] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476}; memcpy(c.s, s, sizeof s); c.alg = 0; words = 4; big = 0; }
+  else if (!strcmp(alg, "sha1")) { uint32_t s[5] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0}; memcpy(c.s, s, sizeof s); c.alg = 1; words = 5; big = 1; }
+  else if (!strcmp(alg, "sha256")) { uint32_t s[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19}; memcpy(c.s, s, sizeof s); c.alg = 2; words = 8; big = 1; }
+  else return luaL_error(L, "hash function '%s' is not supported on PSP", alg);
+  if (!fs_stream(path, hash_chunk, &c)) { lua_pushnil(L); lua_pushfstring(L, "Could not open file %s", path); return 2; }
+  bits = c.total * 8;
+  padlen = (int)((c.n < 56 ? 56 : 120) - c.n) + 8;
+  memset(pad, 0, sizeof pad);
+  pad[0] = 0x80;
+  for (k = 0; k < 8; k++) pad[padlen - 8 + k] = big ? (unsigned char)(bits >> (56 - 8 * k)) : (unsigned char)(bits >> (8 * k));
+  hash_chunk(&c, pad, (size_t)padlen);
+  for (k = 0; k < words; k++) {
+    if (big) { out[k * 4] = c.s[k] >> 24; out[k * 4 + 1] = c.s[k] >> 16; out[k * 4 + 2] = c.s[k] >> 8; out[k * 4 + 3] = c.s[k]; }
+    else { out[k * 4] = c.s[k]; out[k * 4 + 1] = c.s[k] >> 8; out[k * 4 + 2] = c.s[k] >> 16; out[k * 4 + 3] = c.s[k] >> 24; }
+  }
+  lua_pushlstring(L, (char *)out, (size_t)words * 4);
+  return 1;
+}
+
 /* ------------------------------------------------------------ encodings */
 
 static const char B64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -300,7 +343,7 @@ static int c_screen(lua_State *L) {
 }
 
 static const luaL_Reg core_funcs[] = {
-  {"hash", c_hash}, {"encode", c_encode}, {"decode", c_decode},
+  {"hash", c_hash}, {"hashFile", c_hashFile}, {"encode", c_encode}, {"decode", c_decode},
   {"compress", c_compress}, {"decompress", c_decompress},
   {"newByteData", c_newByteData}, {"newFileData", c_newFileData},
   {"time", c_time}, {"sleep", c_sleep}, {"poll", c_poll}, {"setMode", c_setMode},

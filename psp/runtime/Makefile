@@ -19,7 +19,10 @@ INCDIR := $(LUA_DIR) ../third_party/stb ../third_party/font8x8 $(B) src
 # -G0: no small-data section (the Lua state is far bigger than $gp reaches)
 CFLAGS := -O2 -G0 -Wall -Wno-unused-function -Wno-format-truncation \
           -Wno-stringop-truncation -Wno-misleading-indentation \
-          -fno-strict-aliasing -DLUA_USE_C89=0
+          -fno-strict-aliasing
+# number configuration shared by the runtime and lpluac (bytecode must match):
+# e.g. LUA_NUMBER_CFLAGS=-DLUA_FLOAT_TYPE=LUA_FLOAT_FLOAT for 32-bit floats
+CFLAGS += $(LUA_NUMBER_CFLAGS)
 LIBDIR :=
 LDFLAGS :=
 LIBS := -lpspaudio -lpsppower -lpspdisplay -lpspctrl -lm

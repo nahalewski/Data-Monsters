@@ -2,9 +2,7 @@ name: PSP port
 
 on:
   push:
-    paths: [".github/workflows/psp.yml"]
   pull_request:
-    paths: [".github/workflows/psp.yml"]
   workflow_dispatch:
 
 jobs:

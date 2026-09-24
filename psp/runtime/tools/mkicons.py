@@ -108,6 +108,33 @@ def main():
     text(px, w, glyphs, "Bring your own cartridge dump: roms/", 24, 242, 1, dim)
     text(px, w, glyphs, "Ported by nahalewski", 24, 256, 1, (220, 200, 150, 255))
     png(os.path.join(out, "PIC1.PNG"), w, h, px)
+
+    # PS Vita LiveArea: icon0 128x128, bg 840x500, startup 280x158
+    vita = os.path.join(out, "vita")
+    os.makedirs(vita, exist_ok=True)
+    w, h = 128, 128
+    px = canvas(w, h, (60, 24, 40), (24, 12, 30))
+    cartridge(px, w, 18, 20, 2, red, cream)
+    text(px, w, glyphs, "GEN 1", 56, 34, 2, cream)
+    text(px, w, glyphs, "PORT", 56, 54, 2, cream)
+    text(px, w, glyphs, "Vita", 56, 76, 1, (200, 190, 200, 255))
+    png(os.path.join(vita, "icon0.png"), w, h, px)
+    w, h = 840, 500
+    px = canvas(w, h, (44, 18, 34), (12, 8, 20))
+    rect(px, w, 0, 0, w, 8, red)
+    cartridge(px, w, 60, 120, 8, red, cream)
+    text(px, w, glyphs, "GEN 1 PORT", 220, 150, 6, cream)
+    text(px, w, glyphs, "for PS Vita", 220, 210, 4, (210, 200, 210, 255))
+    text(px, w, glyphs, "Based on the Pokemon Gen 1 Recompilation Project", 40, 400, 2, grey)
+    text(px, w, glyphs, "by BOIS CLUB GAMES, LLC - github.com/bryanthaboi/gen1recomp", 40, 424, 2, grey)
+    text(px, w, glyphs, "Ported by nahalewski", 40, 456, 2, (220, 200, 150, 255))
+    png(os.path.join(vita, "bg.png"), w, h, px)
+    w, h = 280, 158
+    px = canvas(w, h, (60, 24, 40), (24, 12, 30))
+    cartridge(px, w, 20, 30, 4, red, cream)
+    text(px, w, glyphs, "GEN 1 PORT", 100, 50, 2, cream)
+    text(px, w, glyphs, "for PS Vita", 100, 76, 1, (210, 200, 210, 255))
+    png(os.path.join(vita, "startup.png"), w, h, px)
     print("wrote", out)
 
 

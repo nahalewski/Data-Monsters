@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Build gen1recomp for PSP.
+#
+#   ./build.sh [--host-only] [--upstream DIR] [--ref REF]
+#
+# Steps:
+#   1. fetch bryanthaboi/gen1recomp (or use --upstream DIR)
+#   2. assemble the game tree: this port's shell + the GPL engine (the
+#      upstream launcher files listed in its LICENSE term 2 are excluded)
+#   3. compile every .lua to Lua 5.4 bytecode and pack the tree into game.pak
+#   4. build the lovepsp runtime for the PSP and wrap it in EBOOT.PBP with
+#      game.pak as DATA.PSAR  (skipped with --host-only)
+#
+# Output: dist/gen1recomp/EBOOT.PBP  (copy the folder to PSP/GAME/)
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+UPSTREAM_URL="https://github.com/bryanthaboi/gen1recomp"
+UPSTREAM_REF="${UPSTREAM_REF:-main}"
+UPSTREAM_DIR=""
+HOST_ONLY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --host-only) HOST_ONLY=1 ;;
+    --upstream) UPSTREAM_DIR="$2"; shift ;;
+    --ref) UPSTREAM_REF="$2"; shift ;;
+    *) echo "unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+BUILD="$HERE/build"
+GAME="$BUILD/game"
+DIST="$HERE/dist/gen1recomp"
+mkdir -p "$BUILD" "$DIST"
+
+# ------------------------------------------------------------ 1. upstream
+if [ -z "$UPSTREAM_DIR" ]; then
+  UPSTREAM_DIR="$BUILD/upstream"
+  if [ ! -d "$UPSTREAM_DIR/.git" ]; then
+    git clone --depth 1 --branch "$UPSTREAM_REF" "$UPSTREAM_URL" "$UPSTREAM_DIR"
+  else
+    git -C "$UPSTREAM_DIR" fetch --depth 1 origin "$UPSTREAM_REF"
+    git -C "$UPSTREAM_DIR" checkout -q FETCH_HEAD
+  fi
+fi
+UPSTREAM_COMMIT="$(git -C "$UPSTREAM_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+echo "upstream: $UPSTREAM_DIR @ $UPSTREAM_COMMIT"
+
+# ------------------------------------------------------------ 2. host tools
+make -C "$HERE/runtime" -f Makefile.host -j"$(nproc)" >/dev/null
+LUAC="$HERE/runtime/build/host/lpluac"
+
+# ------------------------------------------------------------ 3. game tree
+rm -rf "$GAME"
+mkdir -p "$GAME"
+cp -r "$HERE/shell/." "$GAME/"
+
+# The engine.  LICENSE.MD term 2 lists the launcher files that are not under
+# the GPL; they are left out and this port ships its own front end.
+EXCLUDE=(
+  src/import/LauncherView.lua
+  src/import/LauncherSettings.lua
+  src/import/OnlinePanel.lua
+  src/import/CartLabelArt.lua
+  src/import/CartShape.lua
+  src/import/RomImporter.lua
+  src/mods/LauncherMods.lua
+  src/import/online
+  assets/launcher
+  assets/labels
+)
+cp -r "$UPSTREAM_DIR/src" "$GAME/src"
+find "$GAME/src" -name '*.md' -delete
+cp -r "$UPSTREAM_DIR/data" "$GAME/data"
+mkdir -p "$GAME/tools" "$GAME/assets"
+for v in "" _blue _yellow; do
+  cp "$UPSTREAM_DIR/tools/rom_manifest$v.json" "$GAME/tools/"
+done
+for d in fonts skins touch logo; do
+  [ -d "$UPSTREAM_DIR/assets/$d" ] && cp -r "$UPSTREAM_DIR/assets/$d" "$GAME/assets/$d"
+done
+for e in "${EXCLUDE[@]}"; do rm -rf "${GAME:?}/$e"; done
+cp "$UPSTREAM_DIR/LICENSE.MD" "$GAME/LICENSE-gen1recomp.md"
+cat > "$GAME/lovepsp/build_info.lua" <<EOF
+return { upstream = "$UPSTREAM_COMMIT", built = "$(date -u +%Y-%m-%dT%H:%MZ)" }
+EOF
+
+# Lua 5.4 bytecode: faster to load than source.  Debug info (line numbers,
+# local names) is kept so error screens and bug reports stay useful; the
+# chunk name keeps the archive-relative path for the same reason.
+fail=0
+while IFS= read -r -d '' f; do
+  rel="${f#$GAME/}"
+  if ! "$LUAC" -g "$f" "$f.tmp" "$rel"; then fail=1; continue; fi
+  mv "$f.tmp" "$f"
+done < <(find "$GAME" -name '*.lua' -print0)
+[ "$fail" = 0 ] || { echo "bytecode compilation failed" >&2; exit 1; }
+
+python3 "$HERE/runtime/tools/mkpak.py" "$BUILD/game.pak" "$GAME"
+cp "$BUILD/game.pak" "$DIST/game.pak"
+
+# ------------------------------------------------------------ 4. EBOOT
+if [ "$HOST_ONLY" = 1 ]; then
+  echo "host-only build: $DIST/game.pak"
+  exit 0
+fi
+export PSPDEV="${PSPDEV:-/usr/local/pspdev}"
+export PATH="$PSPDEV/bin:$PATH"
+make -C "$HERE/runtime" -j"$(nproc)" >/dev/null
+# DATA.PSAR carries the game archive, so a single EBOOT.PBP is the whole port
+pack-pbp "$DIST/EBOOT.PBP" "$HERE/runtime/build/psp/PARAM.SFO" "$HERE/psp-assets/ICON0.PNG" \
+  NULL NULL "$HERE/psp-assets/PIC1.PNG" NULL "$HERE/runtime/build/psp/lovepsp.prx" "$BUILD/game.pak"
+rm -f "$DIST/game.pak"
+mkdir -p "$DIST/roms" "$DIST/save"
+cp "$HERE/README.md" "$DIST/README.md"
+echo "built $DIST/EBOOT.PBP ($(du -h "$DIST/EBOOT.PBP" | cut -f1))"

@@ -1,0 +1,46 @@
+# Desktop (SDL2) build of the lovepsp runtime, for testing off the console,
+# plus the host tools the packaging step needs.
+#
+#   make -f Makefile.host            -> build/host/lovepsp, build/host/lpluac
+
+B := build/host
+LUA_DIR := ../third_party/lua
+STB_DIR := ../third_party/stb
+F8_DIR := ../third_party/font8x8
+
+LUA_SRC := $(filter-out $(LUA_DIR)/luac.c,$(wildcard $(LUA_DIR)/*.c))
+RT_SRC := src/main.c src/obj.c src/fs.c src/image.c src/gfx.c src/font.c src/audio.c \
+          src/core.c src/vorbis.c src/plat_common.c src/plat_host.c
+
+CFLAGS ?= -O2 -g
+CFLAGS += -Wall -Wno-unused-function -Wno-format-truncation -Wno-stringop-truncation -I$(LUA_DIR) -I$(STB_DIR) -I$(F8_DIR) -I$(B) -Isrc \
+          $(shell pkg-config --cflags sdl2) -DLUA_USE_LINUX
+LDLIBS := $(shell pkg-config --libs sdl2) -lm -ldl
+
+all: $(B)/lovepsp $(B)/lpluac
+
+$(B)/boot_lua.h: lua/boot.lua tools/bin2c.py
+	@mkdir -p $(B)
+	python3 tools/bin2c.py $< $@ boot_lua
+
+$(B)/obj/lua/%.o: $(LUA_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -w -c $< -o $@
+
+$(B)/obj/rt/%.o: src/%.c $(B)/boot_lua.h $(wildcard src/*.h)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+LUA_OBJ := $(patsubst $(LUA_DIR)/%.c,$(B)/obj/lua/%.o,$(LUA_SRC))
+RT_OBJ := $(patsubst src/%.c,$(B)/obj/rt/%.o,$(RT_SRC))
+
+$(B)/lovepsp: $(RT_OBJ) $(LUA_OBJ)
+	$(CC) -o $@ $^ $(LDLIBS)
+
+$(B)/lpluac: tools/luac.c $(LUA_OBJ)
+	$(CC) $(CFLAGS) -o $@ $^ -lm -ldl
+
+clean:
+	rm -rf $(B)
+
+.PHONY: all clean

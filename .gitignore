@@ -9,3 +9,12 @@ Thumbs.db
 # Node
 node_modules/
 shared-doc.json
+
+# PSP port build output
+psp/build/
+psp/dist/
+psp/runtime/build/
+psp/runtime/src/*.o
+psp/third_party/lua/*.o
+psp/runtime/test/smoke/save/
+psp/runtime/test/smoke/shot.png

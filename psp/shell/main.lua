@@ -233,7 +233,9 @@ local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", str
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
 local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true,
                   touch = nil, -- nil: the runtime's default (on for the Vita)
-                  layout = nil } -- nil: the runtime's default; "ds": game on top, controls below
+                  layout = nil, -- nil: the runtime's default; "ds": game on top, controls below
+                  pad = nil,    -- nil: the runtime's default (drawn pad on Android, off on the Vita)
+                  skin = "gbc" } -- DS layout skin: gbc (3DS, G1R sticker, GBC border), sticker, plain, small, off
 
 local function saveOptions()
   local parts = {}
@@ -250,6 +252,7 @@ local function applyOptions()
   lovepsp.env.POKEPORT_AUDIO_RATE = Options.audioRate
   if Options.touch ~= nil and lovepsp.touch then pcall(lovepsp.touch, Options.touch) end
   if Options.layout and lovepsp.layout then pcall(lovepsp.layout, Options.layout) end
+  if Options.pad ~= nil and lovepsp.touchPad then pcall(lovepsp.touchPad, Options.pad) end
   pcall(love.filesystem.write, "lovepsp_scaling.txt", Options.scaling)
 end
 
@@ -273,6 +276,8 @@ local function loadOptions()
     if t.musicNative ~= nil then Options.music = t.musicNative == "true" end
     if t.touch ~= nil then Options.touch = t.touch == "true" end
     if t.layout == "ds" or t.layout == "single" then Options.layout = t.layout end
+    if t.pad ~= nil then Options.pad = t.pad == "true" end
+    if t.skin then Options.skin = t.skin end
   end
   applyOptions()
 end
@@ -313,6 +318,20 @@ local OPTION_ROWS = {
     function()
       if love._os == "PSP" or not lovepsp.layout then return end
       Options.layout = lovepsp.layout() == "ds" and "single" or "ds"
+    end },
+  { "DS skin", function()
+      local names = { gbc = "3DS, G1R sticker, GBC border", sticker = "3DS, G1R sticker", plain = "3DS plain",
+                      small = "3DS small screen", off = "OFF" }
+      return (names[Options.skin] or Options.skin) .. " (DS layout)"
+    end,
+    function(d) Options.skin = cycle({ "gbc", "sticker", "plain", "small", "off" }, Options.skin, d == 0 and 1 or d) end },
+  { "On-screen pad", function()
+      if love._os == "PSP" or not lovepsp.touchPad then return "n/a" end
+      return lovepsp.touchPad() and "ON (drawn D-pad, A, B)" or "OFF (real buttons)"
+    end,
+    function()
+      if love._os == "PSP" or not lovepsp.touchPad then return end
+      Options.pad = not lovepsp.touchPad()
     end },
   { "Touch controls", function()
       local on = lovepsp.touch and lovepsp.touch()
@@ -779,6 +798,11 @@ local function bootGame(version)
         mods = function() scanMods() return Mods.list end,
         toggleMod = toggleMod,
         token = readGithubToken,
+        skin = function() return Options.skin end,
+        padDefault = function()
+          if Options.pad ~= nil then return Options.pad end
+          return love._os ~= "Vita"
+        end,
         invalidateMods = function() love.filesystem.remove("mods_cache.lua") end,
         removeTree = removeTree,
         restart = function(bootVersion)

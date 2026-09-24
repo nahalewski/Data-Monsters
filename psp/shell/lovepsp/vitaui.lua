@@ -41,13 +41,79 @@ local state = {
   passthrough = false, message = nil, messageTimer = 0,
   progress = nil, updater = nil,
   sw = SCREEN_W, sh = PANEL_H, ds = false, base = 0,
+  leftPage = "mods", leftCursor = 1, rightCursor = 1,
+  prevButtons = 0, stick = {}, -- controller edge/repeat state
+  skin = nil, held = 0, homeDown = false, -- skin: active top frame, injected buttons
+  rightScroll = 0,
+  panelY = 0, panelH = PANEL_H, -- panel area inside the bottom half
 }
 
+local HELP = {
+  "CONTROLLER (Vita, Razer Kishi, any pad)",
+  "START: open/close the MENU panel.",
+  "SELECT: open/close this MODS panel.",
+  "Right stick: move in MENU. R1 select, R2 back.",
+  "Left stick: move in MODS. L1 select, L2 back.",
+  "D-pad, X, O: the game keeps playing.",
+  "Select+R / Select+L: screen mode.",
+  "TOUCH: tap a row; tap X to close; tap the MODS / MENU buttons after touching the game.",
+}
+
+-- 3DS skin (shell/assets/skin3ds, the player's art): frames drawn around
+-- the two halves of the DS layout; the game sits in the top frame's screen
+-- cutout, the panels in the bottom one's, and the frame's own buttons are
+-- the touch controls.  Source-pixel geometry of the half-size images.
+local SKIN_TOP = {
+  gbc = { file = "top_gbc.png", cut = { 170, 140, 419, 232 } }, -- sticker + Game Boy Color border (default)
+  sticker = { file = "top_sticker.png", cut = { 124, 118, 519, 277 } },
+  plain = { file = "top_plain.png", cut = { 126, 156, 471, 267 } },
+  small = { file = "top_small.png", cut = { 222, 170, 281, 239 } },
+}
+local SKIN_BOTTOM = {
+  file = "bottom.png", cut = { 176, 132, 373, 277 },
+  buttons = { -- centre / half size in source pixels of bottom.png
+    { name = "pad", x = 82, y = 320, r = 48, kind = "dpad" },
+    { name = "stick", x = 82, y = 205, r = 50, kind = "dpad" },
+    { name = "a", x = 677, y = 231, r = 24, bits = "cross" },
+    { name = "b", x = 640, y = 270, r = 24, bits = "circle" },
+    { name = "x", x = 640, y = 194, r = 24, bits = "cross" },
+    { name = "y", x = 602, y = 231, r = 24, bits = "circle" },
+    { name = "start", x = 609, y = 350, r = 18, bits = "start" },
+    { name = "select", x = 609, y = 391, r = 18, bits = "select" },
+    { name = "home", x = 362, y = 447, r = 34, kind = "menu" },
+  },
+}
+local skinImages = {}
+local function skinImage(file)
+  if skinImages[file] == nil then
+    local ok, img = pcall(love.graphics.newImage, "assets/skin3ds/" .. file)
+    skinImages[file] = ok and img or false
+    if ok then img:setFilter("linear", "linear") end
+  end
+  return skinImages[file] or nil
+end
+
+-- placement of a frame image scaled to the 272 px half height, centred
+local function framePlacement(img)
+  local iw, ih = img:getDimensions()
+  local sc = PANEL_H / ih
+  return (SCREEN_W - iw * sc) / 2, sc
+end
+
 local function font(size) return state.opts.font(size) end
+local visibleRows -- rows that fit a panel (defined with the input code below)
 local function log(msg) if state.opts.log then state.opts.log(msg) end end
 
 -- geometry of the two panels for the current layout
 local function panelRect(side)
+  if state.ds and state.skin then
+    local img = skinImage(SKIN_BOTTOM.file)
+    if img then
+      local ox, sc = framePlacement(img)
+      local c = SKIN_BOTTOM.cut
+      return ox + c[1] * sc, c[3] * sc
+    end
+  end
   if state.ds then return 0, SCREEN_W end
   if side == "left" then return 0, SIDE_W end
   return SCREEN_W - SIDE_W, SIDE_W
@@ -90,7 +156,7 @@ local function buildMenuRows()
       state.passthrough = false
     end)
   end
-  push("OPTIONS", function() state.rightPage = "options" end, true)
+  push("OPTIONS", function() state.rightPage = "options" state.rightCursor = 1 state.rightScroll = 0 end, true)
   push("MODS", function() M.openLeft() end, true)
   push("QUIT", function() state.rightPage = "quit" end, true)
   return rows
@@ -105,9 +171,11 @@ local function buildOptionRows()
         if state.opts.applyOptions then state.opts.applyOptions() end
       end, keep = true }
   end
-  rows[#rows + 1] = { label = "< BACK", action = function() state.rightPage = "menu" end, keep = true }
+  rows[#rows + 1] = { label = "< BACK", action = function() state.rightPage = "menu" state.rightCursor = 1 state.rightScroll = 0 end, keep = true }
   return rows
 end
+
+local startUpdate -- defined with the updater below
 
 local function buildModRows()
   local rows = {}
@@ -124,7 +192,26 @@ local function buildModRows()
       error = m and m.error and tostring(m.error) or nil,
     }
   end
+  -- actions at the bottom of the list, reachable with the stick as well
+  if lovepsp.network and lovepsp.network() then
+    rows[#rows + 1] = { action = "update", label = "UPDATE FROM GITHUB" }
+  end
+  rows[#rows + 1] = { action = "apply", label = "APPLY (RESTART THE GAME)" }
+  rows[#rows + 1] = { action = "help", label = "INSTRUCTIONS" }
   return rows
+end
+
+local function activateModRow(row)
+  if not row then return end
+  if row.action == "update" then startUpdate()
+  elseif row.action == "apply" then
+    if state.modsChanged and state.opts.restart then state.opts.restart(state.opts.version)
+    else state.progress = "Nothing changed yet" end
+  elseif row.action == "help" then state.leftPage = "help"
+  elseif row.entry and state.opts.toggleMod then
+    state.opts.toggleMod(row.entry)
+    state.modsChanged = true
+  end
 end
 
 ---------------------------------------------------------------- updater
@@ -216,7 +303,7 @@ local function updateAll()
   state.progress = ("%d updated, %d failed"):format(updated, failed)
 end
 
-local function startUpdate()
+startUpdate = function()
   if state.updater then return end
   if not (lovepsp.network and lovepsp.network() and lovepsp.http_get) then
     state.progress = "No network on this console"
@@ -235,6 +322,21 @@ local function openRight()
   state.right = true
   state.rightPage = "menu"
   state.rows = buildMenuRows()
+  state.rightCursor = 1
+  state.rightScroll = 0
+end
+
+local function rightRows()
+  return state.rightPage == "options" and buildOptionRows() or state.rows
+end
+
+local function clampRightScroll()
+  local visible = visibleRows()
+  local n = #rightRows()
+  if state.rightCursor > n then state.rightCursor = math.max(1, n) end
+  if state.rightCursor - 1 < state.rightScroll then state.rightScroll = state.rightCursor - 1 end
+  if state.rightCursor > state.rightScroll + visible then state.rightScroll = state.rightCursor - visible end
+  if state.rightScroll < 0 then state.rightScroll = 0 end
 end
 
 local function closeRight()
@@ -245,8 +347,15 @@ end
 function M.openLeft()
   if state.ds then closeRight() end
   state.left = true
+  state.leftPage = "mods"
   state.modRows = buildModRows()
   state.modScroll = 0
+  state.leftCursor = 1
+end
+
+local function closeLeft()
+  state.left = false
+  state.leftPage = "mods"
 end
 
 local function applyBars()
@@ -265,12 +374,12 @@ end
 
 ---------------------------------------------------------------- input
 
-local function visibleRows() return math.floor((PANEL_H - 36 - 58) / ROW_H) end
+visibleRows = function() return math.max(1, math.floor((state.panelH - 36 - 30) / ROW_H)) end
 
 local function tapRight(x, y)
   local px, pw = panelRect("right")
   if y < 30 then closeRight() return end
-  local rows = state.rightPage == "options" and buildOptionRows() or state.rows
+  local rows = rightRows()
   if state.rightPage == "quit" then
     if y >= 120 and y < 150 then
       if x < px + pw / 2 then
@@ -281,9 +390,17 @@ local function tapRight(x, y)
     end
     return
   end
-  local i = math.floor((y - 36) / ROW_H) + 1
+  local visible = visibleRows()
+  if #rows > visible and y >= state.panelH - 30 then
+    -- bottom strip: UP / DN page the list for touch
+    if x < px + 40 then state.rightScroll = math.max(0, state.rightScroll - visible)
+    elseif x < px + 80 then state.rightScroll = math.min(math.max(0, #rows - visible), state.rightScroll + visible) end
+    return
+  end
+  local i = math.floor((y - 36) / ROW_H) + 1 + state.rightScroll
   local row = rows[i]
   if not row then return end
+  state.rightCursor = i
   local ok, err = pcall(row.action)
   if not ok then
     log("vitaui: " .. tostring(err))
@@ -292,28 +409,117 @@ local function tapRight(x, y)
   if not row.keep then closeRight() end
 end
 
+local function rightBack()
+  if state.rightPage ~= "menu" then state.rightPage = "menu" else closeRight() end
+end
+
+local function leftBack()
+  if state.leftPage ~= "mods" then state.leftPage = "mods" else closeLeft() end
+end
+
 local function tapLeft(x, y)
   local px, pw = panelRect("left")
-  if y < 30 then state.left = false return end
+  if y < 30 then leftBack() return end
+  if state.leftPage == "help" then return end
   local visible = visibleRows()
-  if y >= PANEL_H - 30 then
-    -- bottom strip: UP, DN, APPLY
+  if y >= state.panelH - 30 then
+    -- bottom strip: UP / DN page the list for touch
     if x < px + 40 then state.modScroll = math.max(0, state.modScroll - visible)
     elseif x < px + 80 then state.modScroll = math.min(math.max(0, #state.modRows - visible), state.modScroll + visible)
-    elseif x >= px + pw - 64 and state.modsChanged and state.opts.restart then
-      state.opts.restart(state.opts.version)
     end
-    return
-  elseif y >= PANEL_H - 56 then
-    startUpdate()
     return
   end
   local i = math.floor((y - 36) / ROW_H) + 1 + state.modScroll
   local row = state.modRows[i]
   if not row then return end
-  if state.opts.toggleMod then
-    state.opts.toggleMod(row.entry)
-    state.modsChanged = true
+  state.leftCursor = i
+  activateModRow(row)
+end
+
+---------------------------------------------------------------- controller
+
+local REPEAT_FIRST, REPEAT_NEXT = 0.35, 0.12
+
+-- stick direction with key-repeat: returns -1 / 1 on the frames a move fires
+local function stickStep(name, value, dt)
+  local st = state.stick[name]
+  if not st then st = { dir = 0, t = 0 } state.stick[name] = st end
+  local dir = value < -0.5 and -1 or value > 0.5 and 1 or 0
+  if dir == 0 then st.dir = 0 return 0 end
+  if dir ~= st.dir then st.dir = dir st.t = REPEAT_FIRST return dir end
+  st.t = st.t - dt
+  if st.t <= 0 then st.t = REPEAT_NEXT return dir end
+  return 0
+end
+
+local function clampScroll()
+  local visible = visibleRows()
+  if state.leftCursor < 1 then state.leftCursor = #state.modRows end
+  if state.leftCursor > #state.modRows then state.leftCursor = 1 end
+  if state.leftCursor - 1 < state.modScroll then state.modScroll = state.leftCursor - 1 end
+  if state.leftCursor > state.modScroll + visible then state.modScroll = state.leftCursor - visible end
+end
+
+local function controller(dt)
+  local raw = lovepsp.rawInput
+  local B = lovepsp.buttonBits
+  if not raw or not B then return end
+  local buttons = raw.buttons or 0
+  local pressed = buttons & ~state.prevButtons
+  state.prevButtons = buttons
+  if love._env and love._env.LOVEPSP_TRACE_PAD == "1" and (pressed ~= 0 or math.abs(raw.ry or 0) > 0.5 or math.abs(raw.ay or 0) > 0.5 or (raw.lt or 0) > 0.5 or (raw.rt or 0) > 0.5) then
+    log(("pad: t=%.2f buttons=%d pressed=%d ay=%.1f ry=%.1f right=%s left=%s"):format(love.timer.getTime(), buttons, pressed, raw.ay or 0, raw.ry or 0, tostring(state.right), tostring(state.left)))
+  end
+  -- START / SELECT toggle the panels (the game's own START menu is replaced)
+  if pressed & B.start ~= 0 then
+    if state.right then closeRight() else openRight() end
+  end
+  if pressed & B.select ~= 0 and buttons & (B.l | B.r) == 0 then
+    if state.left then closeLeft() else M.openLeft() end
+  end
+  -- triggers as edges
+  local l2 = (raw.lt or 0) > 0.5 and 1 or 0
+  local r2 = (raw.rt or 0) > 0.5 and 1 or 0
+  local l2Pressed = l2 == 1 and state.stick.l2 ~= 1
+  local r2Pressed = r2 == 1 and state.stick.r2 ~= 1
+  state.stick.l2, state.stick.r2 = l2, r2
+
+  if state.right then
+    local rows = rightRows()
+    local move = stickStep("ry", raw.ry or 0, dt)
+    if state.rightPage == "quit" then
+      if move ~= 0 then state.rightCursor = state.rightCursor == 1 and 2 or 1 end
+      if pressed & B.r ~= 0 then
+        if state.rightCursor == 1 and state.opts.restart then state.opts.restart(nil) else state.rightPage = "menu" end
+      end
+    else
+      if move ~= 0 then
+        state.rightCursor = ((state.rightCursor - 1 + move) % math.max(1, #rows)) + 1
+        clampRightScroll()
+      end
+      if pressed & B.r ~= 0 then
+        local row = rows[state.rightCursor]
+        if row then
+          local ok, err = pcall(row.action)
+          if not ok then log("vitaui: " .. tostring(err)) end
+          if not row.keep then closeRight() end
+        end
+      end
+    end
+    if r2Pressed then rightBack() end
+  end
+  if state.left then
+    if state.leftPage == "help" then
+      if l2Pressed or pressed & B.l ~= 0 then leftBack() end
+    else
+      local move = stickStep("ly", raw.ay or 0, dt)
+      if move ~= 0 then
+        state.leftCursor = state.leftCursor + move
+        clampScroll()
+      end
+      if pressed & B.l ~= 0 then activateModRow(state.modRows[state.leftCursor]) end
+      if l2Pressed then leftBack() end
+    end
   end
 end
 
@@ -323,6 +529,17 @@ local function tapAt(x, y)
     -- the game half in the DS layout
     state.circleTimer = SHOW_SECONDS
     return
+  end
+  if state.skin then
+    -- the floating MODS / MENU buttons first; inside the bottom screen
+    -- cutout the panels take taps; elsewhere the frame's buttons do
+    -- (see skinButtons)
+    if not state.left and x < 40 and math.abs(y - CIRCLE_Y) < 24 then M.openLeft() return end
+    if not state.right and x > SCREEN_W - 40 and math.abs(y - CIRCLE_Y) < 24 then openRight() return end
+    local px, pw = panelRect("left")
+    local inScreen = x >= px and x < px + pw and y >= state.panelY and y < state.panelY + state.panelH
+    if not inScreen then return end
+    y = y - state.panelY
   end
   if state.left then
     local px, pw = panelRect("left")
@@ -337,6 +554,85 @@ local function tapAt(x, y)
     if not state.right and x > SCREEN_W - 40 and math.abs(y - CIRCLE_Y) < 24 then openRight() return end
   end
   state.circleTimer = SHOW_SECONDS
+end
+
+---------------------------------------------------------------- skin
+
+-- the frame's drawn buttons under the fingers -> injected pad buttons
+local function skinButtons(touches)
+  local img = skinImage(SKIN_BOTTOM.file)
+  if not img then return 0 end
+  local ox, sc = framePlacement(img)
+  local B = lovepsp.buttonBits
+  local mask, home = 0, false
+  for _, t in ipairs(touches or {}) do
+    local x, y = t.x, t.y - state.base
+    if y >= 0 then
+      for _, b in ipairs(SKIN_BOTTOM.buttons) do
+        local cx, cy, r = ox + b.x * sc, b.y * sc, b.r * sc
+        local dx, dy = x - cx, y - cy
+        if b.kind == "dpad" then
+          local ax, ay = math.abs(dx), math.abs(dy)
+          if ax <= r * 1.3 and ay <= r * 1.3 and (ax > r * 0.2 or ay > r * 0.2) then
+            if ax >= ay * 0.45 then mask = mask | (dx < 0 and B.left or B.right) end
+            if ay >= ax * 0.45 then mask = mask | (dy < 0 and B.up or B.down) end
+          end
+        elseif dx * dx + dy * dy <= (r * 1.25) * (r * 1.25) then
+          if b.kind == "menu" then home = true else mask = mask | (B[b.bits] or 0) end
+        end
+      end
+    end
+  end
+  if home and not state.homeDown then
+    if state.right then closeRight() else openRight() end
+  end
+  state.homeDown = home
+  return mask
+end
+
+local function drawSkinFrames()
+  local top = SKIN_TOP[state.skin]
+  local img = top and skinImage(top.file)
+  if img then
+    local ox, sc = framePlacement(img)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(img, ox, -state.base, 0, sc, sc)
+  end
+  img = skinImage(SKIN_BOTTOM.file)
+  if img then
+    local ox, sc = framePlacement(img)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(img, ox, 0, 0, sc, sc)
+    -- pressed highlights
+    local B = lovepsp.buttonBits
+    for _, b in ipairs(SKIN_BOTTOM.buttons) do
+      local lit = false
+      if b.kind == "dpad" then lit = state.held & (B.up | B.down | B.left | B.right) ~= 0
+      elseif b.kind == "menu" then lit = state.homeDown
+      else lit = state.held & (B[b.bits] or 0) ~= 0 end
+      if lit then
+        love.graphics.setColor(1, 1, 1, 0.35)
+        love.graphics.circle("fill", ox + b.x * sc, b.y * sc, b.r * sc)
+      end
+    end
+  end
+end
+
+-- the game goes into the top frame's screen cutout (aspect fit)
+local function applyGameRect()
+  local top = state.skin and SKIN_TOP[state.skin]
+  local img = top and skinImage(top.file)
+  if not (state.ds and img) then
+    if lovepsp.gameRect then lovepsp.gameRect() end
+    return
+  end
+  local ox, sc = framePlacement(img)
+  local c = top.cut
+  local cx, cy, cw, ch = ox + c[1] * sc, c[2] * sc, c[3] * sc, c[4] * sc
+  local gw, gh = 160, 144
+  local s = math.min(cw / gw, ch / gh)
+  local w, h = math.floor(gw * s), math.floor(gh * s)
+  lovepsp.gameRect(math.floor(cx + (cw - w) / 2), math.floor(cy + (ch - h) / 2), w, h)
 end
 
 ---------------------------------------------------------------- drawing
@@ -362,7 +658,7 @@ end
 
 local function panel(x, w, title)
   love.graphics.setColor(PANEL_BG)
-  love.graphics.rectangle("fill", x, 0, w, PANEL_H)
+  love.graphics.rectangle("fill", x, 0, w, state.panelH)
   love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
   love.graphics.rectangle("fill", x, 0, w, 26)
   love.graphics.setColor(1, 1, 1, 1)
@@ -371,14 +667,18 @@ local function panel(x, w, title)
   love.graphics.print("X", x + w - 18, 6)
 end
 
-local function drawRows(x, w, rows, scroll, selectedFn)
+local function drawRows(x, w, rows, scroll, cursor, selectedFn)
   love.graphics.setFont(font(11))
   local y = 36
   local visible = visibleRows()
   for i = scroll + 1, math.min(#rows, scroll + visible) do
     local row = rows[i]
-    love.graphics.setColor(1, 1, 1, 0.08)
+    love.graphics.setColor(1, 1, 1, i == cursor and 0.2 or 0.08)
     love.graphics.rectangle("fill", x + 6, y - 2, w - 12, ROW_H - 4, 4, 4)
+    if i == cursor then
+      love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+      love.graphics.rectangle("line", x + 6, y - 2, w - 12, ROW_H - 4, 4, 4)
+    end
     if selectedFn then selectedFn(row, x, y, w) end
     y = y + ROW_H
   end
@@ -388,7 +688,7 @@ local function drawRight()
   local x, w = panelRect("right")
   if state.rightPage == "options" then
     panel(x, w, "OPTIONS")
-    drawRows(x, w, buildOptionRows(), 0, function(row, rx, ry, rw)
+    drawRows(x, w, buildOptionRows(), state.rightScroll, state.rightCursor, function(row, rx, ry, rw)
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.print(row.label, rx + 10, ry)
       if row.value then
@@ -407,22 +707,56 @@ local function drawRight()
     love.graphics.rectangle("fill", x + 10, 120, w / 2 - 15, 30, 5, 5)
     love.graphics.setColor(0.3, 0.3, 0.36, 1)
     love.graphics.rectangle("fill", x + w / 2 + 5, 120, w / 2 - 15, 30, 5, 5)
+    love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+    if state.rightCursor == 1 then love.graphics.rectangle("line", x + 10, 120, w / 2 - 15, 30, 5, 5)
+    else love.graphics.rectangle("line", x + w / 2 + 5, 120, w / 2 - 15, 30, 5, 5) end
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.printf("YES", x + 10, 129, w / 2 - 15, "center")
     love.graphics.printf("NO", x + w / 2 + 5, 129, w / 2 - 15, "center")
   else
     panel(x, w, "MENU")
-    drawRows(x, w, state.rows, 0, function(row, rx, ry)
+    drawRows(x, w, state.rows, state.rightScroll, state.rightCursor, function(row, rx, ry)
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.print(tostring(row.label), rx + 10, ry + 4)
     end)
+  end
+  if state.rightPage ~= "quit" and #rightRows() > visibleRows() then
+    local sy = state.panelH - 28
+    love.graphics.setColor(1, 1, 1, 0.12)
+    love.graphics.rectangle("fill", x + 6, sy, 32, 22, 4, 4)
+    love.graphics.rectangle("fill", x + 42, sy, 32, 22, 4, 4)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setFont(font(11))
+    love.graphics.print("UP", x + 12, sy + 5)
+    love.graphics.print("DN", x + 48, sy + 5)
   end
 end
 
 local function drawLeft()
   local x, w = panelRect("left")
+  if state.leftPage == "help" then
+    panel(x, w, "INSTRUCTIONS")
+    love.graphics.setColor(1, 1, 1, 1)
+    local f = font(w > 200 and 10 or 8)
+    love.graphics.setFont(f)
+    local y = 34
+    local lineH = f:getHeight() + 2
+    for _, line in ipairs(HELP) do
+      local _, lines = f:getWrap(line, w - 16)
+      love.graphics.printf(line, x + 8, y, w - 16)
+      y = y + lineH * math.max(1, #lines) + 2
+    end
+    love.graphics.setColor(0.6, 0.6, 0.66, 1)
+    love.graphics.print("L2 / tap X: back", x + 8, state.panelH - 16)
+    return
+  end
   panel(x, w, "MODS")
-  drawRows(x, w, state.modRows, state.modScroll, function(row, rx, ry, rw)
+  drawRows(x, w, state.modRows, state.modScroll, state.leftCursor, function(row, rx, ry, rw)
+    if row.action then
+      love.graphics.setColor(row.action == "apply" and not state.modsChanged and { 0.6, 0.6, 0.66, 1 } or { 0.75, 0.9, 1, 1 })
+      love.graphics.print(row.label, rx + 10, ry + 4)
+      return
+    end
     local on = row.entry.enabled
     love.graphics.setColor(on and { 0.35, 0.9, 0.5, 1 } or { 0.5, 0.5, 0.56, 1 })
     love.graphics.rectangle("fill", rx + 10, ry + 3, 22, 12, 6, 6)
@@ -439,8 +773,8 @@ local function drawLeft()
     end
     love.graphics.setFont(font(11))
   end)
-  -- bottom strip: UP DN UPDATE APPLY
-  local sy = PANEL_H - 28
+  -- bottom strip: UP / DN for touch paging, progress text beside them
+  local sy = state.panelH - 28
   love.graphics.setColor(1, 1, 1, 0.12)
   love.graphics.rectangle("fill", x + 6, sy, 32, 22, 4, 4)
   love.graphics.rectangle("fill", x + 42, sy, 32, 22, 4, 4)
@@ -448,26 +782,10 @@ local function drawLeft()
   love.graphics.setFont(font(11))
   love.graphics.print("UP", x + 12, sy + 5)
   love.graphics.print("DN", x + 48, sy + 5)
-  if state.modsChanged then
-    love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
-    love.graphics.rectangle("fill", x + w - 64, sy, 58, 22, 4, 4)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(font(9))
-    love.graphics.printf("APPLY", x + w - 64, sy + 6, 58, "center")
-  end
-  -- second strip: UPDATE FROM GITHUB (full width) with the progress line above
-  if lovepsp.network and lovepsp.network() then
-    love.graphics.setColor(0.3, 0.6, 0.5, 1)
-    love.graphics.rectangle("fill", x + 6, sy - 26, w - 12, 22, 4, 4)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(font(9))
-    love.graphics.printf(state.updater and "UPDATING..." or "UPDATE FROM GITHUB", x + 6, sy - 20, w - 12, "center")
-  end
-  if state.progress then
-    love.graphics.setColor(0.85, 0.9, 1, 1)
-    love.graphics.setFont(font(8))
-    love.graphics.printf(state.progress, x + 6, sy - 38, w - 12, "center")
-  end
+  love.graphics.setFont(font(8))
+  love.graphics.setColor(0.85, 0.9, 1, 1)
+  local note = state.progress or (state.updater and "updating..." or ("%d mods"):format(#state.modRows - 2 - ((lovepsp.network and lovepsp.network()) and 1 or 0)))
+  love.graphics.printf(note, x + 80, sy + 2, w - 86, "left")
 end
 
 local function render()
@@ -481,12 +799,15 @@ local function render()
   love.graphics.clear(0, 0, 0, 0)
   love.graphics.setBlendMode("alpha")
   love.graphics.translate(0, state.base)
+  if state.skin then drawSkinFrames() end
   if state.ds or state.circleTimer > 0 or state.left or state.right then
     if not state.left then circle(18, CIRCLE_Y, "mods") end
     if not state.right then circle(SCREEN_W - 18, CIRCLE_Y, "menu") end
   end
+  love.graphics.translate(0, state.panelY)
   if state.left then drawLeft() end
   if state.right then drawRight() end
+  love.graphics.translate(0, -state.panelY)
   if state.message then
     love.graphics.setColor(0, 0, 0, 0.7)
     love.graphics.rectangle("fill", 120, PANEL_H - 40, 240, 22, 4, 4)
@@ -505,6 +826,8 @@ function M.attach(game, opts)
   state.game, state.opts = game, opts
   state.left, state.right, state.circleTimer = false, false, 0
   state.progress, state.updater, state.modsChanged = nil, nil, false
+  state.prevButtons = lovepsp.rawInput and lovepsp.rawInput.buttons or 0
+  state.stick = {}
   state.attached = lovepsp and lovepsp.setOverlay and lovepsp.touches and true or false
   if not state.attached then return false end
   local Screens = require("src.ui.Screens")
@@ -512,8 +835,7 @@ function M.attach(game, opts)
     Screens._vitaPush = Screens.push
     Screens.push = function(g, id, ...)
       if id == "StartMenu" and state.attached and not state.passthrough then
-        if state.right then closeRight() else openRight() end
-        applyBars()
+        -- swallowed: the START press itself toggles the panel (controller())
         return nil
       end
       return Screens._vitaPush(g, id, ...)
@@ -524,6 +846,9 @@ end
 
 function M.detach()
   state.attached = false
+  state.skin = nil
+  if lovepsp.gameRect then lovepsp.gameRect() end
+  if lovepsp.inject then lovepsp.inject(0) end
   state.left, state.right = false, false
   if lovepsp.setOverlay then lovepsp.setOverlay(nil) end
   if lovepsp.setBars then lovepsp.setBars(-1, -1) end
@@ -538,10 +863,32 @@ function M.update(dt)
     state.ds = state.sh > PANEL_H
     state.base = state.sh - PANEL_H
   end
+  -- skin: only in the DS layout; the drawn pad gives way to the frame
+  local wantSkin = state.ds and state.opts.skin and state.opts.skin() or "off"
+  local newSkin = (wantSkin ~= "off" and SKIN_TOP[wantSkin]) and wantSkin or nil
+  if newSkin ~= state.skin then
+    state.skin = newSkin
+    if lovepsp.touchPad then lovepsp.touchPad(not newSkin and (state.opts.padDefault and state.opts.padDefault() or false) or false) end
+    applyGameRect()
+  end
+  if state.skin then
+    local img = skinImage(SKIN_BOTTOM.file)
+    local _, sc = framePlacement(img)
+    state.panelY, state.panelH = SKIN_BOTTOM.cut[2] * sc, SKIN_BOTTOM.cut[4] * sc
+  else
+    state.panelY, state.panelH = 0, PANEL_H
+  end
   local ok, touches = pcall(lovepsp.touches)
   local t = ok and touches and touches[1]
   if t and not state.wasDown then tapAt(t.x, t.y) end
   state.wasDown = t ~= nil and t ~= false
+  if state.skin and lovepsp.inject then
+    state.held = skinButtons(ok and touches or {})
+    lovepsp.inject(state.held)
+  elseif state.held ~= 0 and lovepsp.inject then
+    state.held = 0
+    lovepsp.inject(0)
+  end
   if state.circleTimer > 0 and not (state.left or state.right) then
     state.circleTimer = state.circleTimer - dt
   end
@@ -549,6 +896,7 @@ function M.update(dt)
     state.messageTimer = state.messageTimer - dt
     if state.messageTimer <= 0 then state.message = nil end
   end
+  controller(dt)
   if state.updater then
     local okr, err = coroutine.resume(state.updater)
     if not okr then log("mod update: " .. tostring(err)) end

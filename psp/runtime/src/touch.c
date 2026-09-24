@@ -23,6 +23,7 @@ static Finger g_fingers[MAX_FINGERS];
 static int g_enabled;
 static int g_offy; /* y offset of the control area (DS layout) */
 static int g_visible; /* overlay shown (game presented between the bars) */
+static int g_pad = 1;  /* the drawn pad is wanted at all */
 static uint32_t g_last_buttons;
 
 /* geometry, logical pixels */
@@ -78,7 +79,9 @@ static uint32_t hit(float x, float y) {
 }
 
 void touch_set_visible(int on) { g_visible = on; }
-int touch_visible(void) { return g_enabled && g_visible; }
+void touch_set_pad(int on) { g_pad = on; }
+int touch_pad(void) { return g_pad; }
+int touch_visible(void) { return g_enabled && g_pad && g_visible; }
 
 /* the i-th active finger in logical screen pixels; 0 when there is none */
 int touch_get(int i, float *x, float *y) {

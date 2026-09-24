@@ -64,11 +64,12 @@ static SDL_mutex *g_amutex;
 typedef struct { long frame; char path[512]; } Shot;
 static Shot g_shots[64];
 static int g_nshots;
-typedef struct { long from, len; uint32_t btn; float tx, ty; } Hold; /* tx >= 0: a synthetic finger */
+typedef struct { long from, len; uint32_t btn; float tx, ty; int axis; } Hold; /* tx >= 0: a synthetic finger; axis: 1 rup 2 rdown 3 lup 4 ldown 5 l2 6 r2 */
 static Hold g_holds[256];
 static int g_nholds;
 static long g_pad_frame, g_touch_frame; /* last frame each source was used, for the overlay */
 static const uint32_t *g_hud; static int g_hud_w, g_hud_h; /* shell HUD layer (sidebars) */
+static uint32_t g_inject; /* buttons held by a shell-drawn skin */
 
 static uint32_t btn_from_name(const char *n) {
   static const struct { const char *n; uint32_t b; } map[] = {
@@ -105,11 +106,18 @@ static void parse_env(void) {
         float tx, ty;
         g_holds[g_nholds].from = f; g_holds[g_nholds].len = d;
         g_holds[g_nholds].tx = g_holds[g_nholds].ty = -1;
+        g_holds[g_nholds].axis = 0;
         if (sscanf(name, "touch@%f@%f", &tx, &ty) == 2) {
           /* touch@X@Y: hold a finger at logical screen coordinates */
           g_holds[g_nholds].btn = 0;
           g_holds[g_nholds].tx = tx; g_holds[g_nholds].ty = ty;
-        } else g_holds[g_nholds].btn = btn_from_name(name);
+        } else if (!strcmp(name, "rup")) g_holds[g_nholds].axis = 1;
+        else if (!strcmp(name, "rdown")) g_holds[g_nholds].axis = 2;
+        else if (!strcmp(name, "lup")) g_holds[g_nholds].axis = 3;
+        else if (!strcmp(name, "ldown")) g_holds[g_nholds].axis = 4;
+        else if (!strcmp(name, "l2")) g_holds[g_nholds].axis = 5;
+        else if (!strcmp(name, "r2")) g_holds[g_nholds].axis = 6;
+        else g_holds[g_nholds].btn = btn_from_name(name);
         g_nholds++;
       }
     }
@@ -127,6 +135,9 @@ int plat_init(int argc, char **argv) {
   parse_env();
 #if defined(__vita__) || defined(__ANDROID__)
   touch_set_enabled(1);
+#ifdef __vita__
+  touch_set_pad(0); /* real buttons: taps only, no drawn pad */
+#endif
 #else
   if (getenv("LOVEPSP_TOUCH")) touch_set_enabled(atoi(getenv("LOVEPSP_TOUCH")));
 #endif
@@ -233,6 +244,12 @@ int plat_touch(int on) {
   if (on >= 0) touch_set_enabled(on);
   return touch_enabled();
 }
+int plat_touch_pad(int on) {
+  if (on >= 0) touch_set_pad(on);
+  return touch_pad();
+}
+void plat_inject(uint32_t buttons) { g_inject = buttons; }
+void plat_set_game_rect(int x, int y, int w, int h) { plat_layout_set_game_rect(x, y, w, h); }
 
 void plat_screen_size(int *w, int *h) { *w = PLAT_SCREEN_W; *h = g_lh; }
 int plat_get_layout(void) { return g_ds; }
@@ -322,10 +339,10 @@ void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
     }
     touch_set_visible(touch_enabled() && w * 2 <= PLAT_SCREEN_W && !plat_layout_custom_bars());
   } else {
-    if (touch_enabled()) {
+    if (touch_enabled() && (touch_pad() || plat_layout_custom_bars())) {
       /* a game (small source) sits between the control bars; the launcher
        * fills the screen and takes taps directly through lovepsp.touches() */
-      mode = 4;
+      if (touch_pad() || plat_layout_custom_bars()) mode = 4;
       /* the pad hides while the shell's sidebars own the bars */
       touch_set_visible(w * 2 <= PLAT_SCREEN_W && !plat_layout_custom_bars());
     }
@@ -412,6 +429,10 @@ void plat_poll(PlatInput *in) {
         if (SDL_GameControllerGetButton(g_pad, map[j].b)) b |= map[j].m;
       in->ax = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
       in->ay = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
+      in->rx = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_RIGHTX) / 32767.0f;
+      in->ry = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_RIGHTY) / 32767.0f;
+      in->lt = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f;
+      in->rt = SDL_GameControllerGetAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767.0f;
     } else if (g_joy) {
       /* raw button order of SDL's PSL1GHT pad: select L3 R3 start up right
        * down left L2 R2 L1 R1 triangle circle cross square */
@@ -424,6 +445,11 @@ void plat_poll(PlatInput *in) {
         in->ax = SDL_JoystickGetAxis(g_joy, 0) / 32767.0f;
         in->ay = SDL_JoystickGetAxis(g_joy, 1) / 32767.0f;
       }
+      if (SDL_JoystickNumAxes(g_joy) >= 4) {
+        in->rx = SDL_JoystickGetAxis(g_joy, 2) / 32767.0f;
+        in->ry = SDL_JoystickGetAxis(g_joy, 3) / 32767.0f;
+      }
+      if (n > 9) { in->lt = SDL_JoystickGetButton(g_joy, 8) ? 1.f : 0.f; in->rt = SDL_JoystickGetButton(g_joy, 9) ? 1.f : 0.f; }
       if (SDL_JoystickNumHats(g_joy) > 0) {
         Uint8 hat = SDL_JoystickGetHat(g_joy, 0);
         if (hat & SDL_HAT_UP) b |= PB_UP;
@@ -434,18 +460,25 @@ void plat_poll(PlatInput *in) {
     }
   }
   if (b) g_pad_frame = g_frame;
+  if (!g_pad && !g_joy) in->ax = in->ay = 0;
   for (i = 0; i < g_nholds; i++) {
     int on = g_frame >= g_holds[i].from && g_frame < g_holds[i].from + g_holds[i].len;
     if (g_holds[i].tx >= 0) touch_finger(1000 + i, on, g_holds[i].tx, g_holds[i].ty);
+    else if (on && g_holds[i].axis) {
+      switch (g_holds[i].axis) {
+        case 1: in->ry = -1; break; case 2: in->ry = 1; break;
+        case 3: in->ay = -1; break; case 4: in->ay = 1; break;
+        case 5: in->lt = 1; break; case 6: in->rt = 1; break;
+      }
+    }
     else if (on) b |= g_holds[i].btn;
   }
   {
-    uint32_t t = touch_buttons();
+    uint32_t t = touch_buttons() | g_inject;
     if (t) g_touch_frame = g_frame;
     b |= t;
   }
   in->buttons = b;
-  if (!g_pad && !g_joy) in->ax = in->ay = 0;
   in->quit = g_quit;
 }
 

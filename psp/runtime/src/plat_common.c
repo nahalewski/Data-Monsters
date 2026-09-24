@@ -3,14 +3,20 @@
 #include <string.h>
 #include "plat_common.h"
 #include "lp.h"
+#ifdef __PSP__
+#define touch_pad() 0 /* no touch module on the PSP build */
+#endif
 
 static int g_bar_l = -1, g_bar_r = -1;
+static int g_gx, g_gy, g_gw, g_gh; /* forced game rect */
+void plat_layout_set_game_rect(int x, int y, int w, int h) { g_gx = x; g_gy = y; g_gw = w; g_gh = h; }
 void plat_layout_set_bars(int left, int right) { g_bar_l = left; g_bar_r = right; }
 int plat_layout_custom_bars(void) { return g_bar_l >= 0 || g_bar_r >= 0; }
 
 static void compute_rect(int sw, int sh, int dw, int dh, int mode,
                          int *ox, int *oy, int *ow, int *oh) {
   int w = sw, h = sh;
+  if (g_gw > 0 && g_gh > 0) { *ox = g_gx; *oy = g_gy; *ow = g_gw; *oh = g_gh; return; }
   if (mode == 1) { /* aspect fit */
     if ((long)dw * sh <= (long)dh * sw) { w = dw; h = (int)((long)sh * dw / sw); }
     else { h = dh; w = (int)((long)sw * dh / sh); }
@@ -21,7 +27,8 @@ static void compute_rect(int sw, int sh, int dw, int dh, int mode,
     if (s < 1) s = 1;
     w = sw * s; h = sh * s;
   } else if (mode == 4) { /* touch layout: fit between the side bars */
-    int bl = g_bar_l >= 0 ? g_bar_l : TOUCH_BAR, br = g_bar_r >= 0 ? g_bar_r : TOUCH_BAR;
+    int def = touch_pad() ? TOUCH_BAR : 0;
+    int bl = g_bar_l >= 0 ? g_bar_l : def, br = g_bar_r >= 0 ? g_bar_r : def;
     int iw = dw - bl - br;
     if (sw * 2 > dw || iw < sw) { w = sw < dw ? sw : dw; h = sh < dh ? sh : dh; }
     else if ((long)iw * sh <= (long)dh * sw) { w = iw; h = (int)((long)sh * iw / sw); }

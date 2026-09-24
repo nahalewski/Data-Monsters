@@ -299,6 +299,24 @@ static int c_touch(lua_State *L) {
   lua_pushboolean(L, plat_touch(on));
   return 1;
 }
+/* lovepsp.touchPad([on]) -> whether the D-pad/A/B overlay is drawn */
+static int c_touchPad(lua_State *L) {
+  int on = lua_isnoneornil(L, 1) ? -1 : lua_toboolean(L, 1);
+  lua_pushboolean(L, plat_touch_pad(on));
+  return 1;
+}
+/* lovepsp.inject(mask): buttons a shell-drawn skin holds this frame */
+static int c_inject(lua_State *L) {
+  plat_inject((uint32_t)luaL_optinteger(L, 1, 0));
+  return 0;
+}
+/* lovepsp.gameRect([x, y, w, h]): where the game is presented (skins); no args clears */
+static int c_gameRect(lua_State *L) {
+  if (lua_isnoneornil(L, 1)) plat_set_game_rect(0, 0, 0, 0);
+  else plat_set_game_rect((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2),
+                          (int)luaL_checkinteger(L, 3), (int)luaL_checkinteger(L, 4));
+  return 0;
+}
 /* lovepsp.touches() -> { {x=, y=}, ... } fingers on the screen (logical px) */
 static int c_touches(lua_State *L) {
   int i = 0;
@@ -323,7 +341,11 @@ static int c_poll(lua_State *L) {
   lua_pushnumber(L, in.ax);
   lua_pushnumber(L, in.ay);
   lua_pushboolean(L, in.quit);
-  return 4;
+  lua_pushnumber(L, in.rx);
+  lua_pushnumber(L, in.ry);
+  lua_pushnumber(L, in.lt);
+  lua_pushnumber(L, in.rt);
+  return 8;
 }
 static int c_setMode(lua_State *L) {
   gfx_resize_backbuffer((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2));
@@ -418,7 +440,7 @@ static const luaL_Reg core_funcs[] = {
   {"time", c_time}, {"sleep", c_sleep}, {"poll", c_poll}, {"setMode", c_setMode},
   {"getMode", c_getMode}, {"present", c_present}, {"os", c_os}, {"baseDir", c_baseDir},
   {"saveDir", c_saveDir}, {"power", c_power}, {"memory", c_memory}, {"log", c_log},
-  {"screen", c_screen}, {"touch", c_touch}, {"touches", c_touches}, {"http_get", c_http_get}, {"unzip", c_unzip},
+  {"screen", c_screen}, {"touch", c_touch}, {"touchPad", c_touchPad}, {"touches", c_touches}, {"inject", c_inject}, {"gameRect", c_gameRect}, {"http_get", c_http_get}, {"unzip", c_unzip},
   {"rename", c_rename}, {"network", c_network}, {"layout", c_layout}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
 
 int luaopen_lovepsp(lua_State *L) {

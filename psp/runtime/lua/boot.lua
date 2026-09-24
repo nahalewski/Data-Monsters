@@ -337,8 +337,10 @@ local function loadInputScript()
 end
 
 local rawPrev = 0
+-- the shell's panels read the pad directly (sticks, triggers, START/SELECT)
+local rawInput = { buttons = 0, ax = 0, ay = 0, rx = 0, ry = 0, lt = 0, rt = 0 }
 local function pumpInput()
-  local buttons, ax, ay, quit = core.poll()
+  local buttons, ax, ay, quit, rx, ry, lt, rt = core.poll()
   if scriptHolds then
     scriptFrame = scriptFrame + 1
     local now = love.timer.getTime()
@@ -351,6 +353,8 @@ local function pumpInput()
     quitSent = true
     love.event.push("quit", 0)
   end
+  rawInput.buttons, rawInput.ax, rawInput.ay = buttons, ax, ay
+  rawInput.rx, rawInput.ry, rawInput.lt, rawInput.rt = rx or 0, ry or 0, lt or 0, rt or 0
   -- SELECT+R / SELECT+L are the runtime's scaling hotkeys, not game input:
   -- detect them against the raw previous state, then hide the shoulder
   -- buttons from the game for as long as SELECT is held
@@ -718,7 +722,12 @@ love.lovepsp = {
   getScaling = love.graphics._getPresentScaling,
   memory = core.memory,
   power = core.power,
-  touch = core.touch,       -- on-screen controls (Vita): touch(on) / touch()
+  touch = core.touch,       -- taps on/off: touch(on) / touch()
+  touchPad = core.touchPad, -- the drawn D-pad/A/B overlay on/off
+  inject = core.inject,     -- inject(mask): buttons held by a shell-drawn skin this frame
+  gameRect = core.gameRect, -- gameRect(x, y, w, h) / gameRect(): where the game is presented
+  rawInput = rawInput,      -- live pad state: buttons bitmask, ax, ay, rx, ry, lt, rt
+  buttonBits = B,           -- names -> bits for rawInput.buttons
   touches = core.touches,   -- fingers on the screen, launcher taps
   setOverlay = love.graphics._setOverlay, -- HUD canvas over the presented frame
   setBars = love.graphics._setBars,       -- side bars the game shrinks between

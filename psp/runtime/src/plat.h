@@ -23,6 +23,8 @@ enum {
 typedef struct PlatInput {
   uint32_t buttons;
   float ax, ay; /* analog nub, -1..1 */
+  float rx, ry; /* right stick (Vita, controllers), -1..1 */
+  float lt, rt; /* L2 / R2 triggers, 0..1 */
   int quit;     /* HOME -> exit requested / window closed */
 } PlatInput;
 
@@ -48,6 +50,9 @@ const char *plat_os_name(void);
 
 /* on-screen touch controls (Vita); -1 = query */
 int plat_touch(int on);
+int plat_touch_pad(int on); /* the drawn D-pad/A/B overlay; -1 = query */
+void plat_inject(uint32_t buttons); /* buttons a skin drawn by the shell holds this frame */
+void plat_set_game_rect(int x, int y, int w, int h);
 int plat_touch_get(int i, float *x, float *y); /* i-th finger in screen pixels */
 /* HUD layer composited over the presented frame (screen-sized RGBA, or NULL) */
 void plat_set_overlay(const uint32_t *px, int w, int h);

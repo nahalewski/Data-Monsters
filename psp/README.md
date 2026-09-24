@@ -139,6 +139,24 @@ one. Put it next to your ROMs as `github_token.json`
 sent as the `Authorization` header, and never copied anywhere else. Keep
 that file off anything you share.
 
+### Controller navigation (Vita, Razer Kishi, any pad)
+
+The panels are driven from the pad as well as by touch; the INSTRUCTIONS
+row at the bottom of the MODS panel shows this in the app:
+
+| Button | Does |
+| --- | --- |
+| START | open / close the MENU panel (replaces the game's START menu) |
+| SELECT | open / close the MODS panel |
+| Right stick, R1, R2 | move in the MENU panel, select, back |
+| Left stick, L1, L2 | move in the MODS panel, toggle / select, back |
+| D-pad, X, O | keep playing the game while a panel is open |
+| Select + R / Select + L | screen mode |
+
+On the Vita the drawn on-screen D-pad/A/B is off (the console has real
+buttons); taps on panel rows still work. The "On-screen pad" option turns
+it on, and Android has it on by default.
+
 ### Screen layouts
 
 `Screen layout` on the options page: **SINGLE** (the game with the touch
@@ -147,6 +165,14 @@ half, the touch pad and the MODS / MENU buttons in the bottom half; an open
 panel takes the whole bottom half). The Android app also has a **dual**
 mode in which the main display shows only the game and a second display
 shows the bottom half.
+
+In the DS layout a **3DS skin** (`shell/assets/skin3ds`, art supplied by
+the port's author) frames both halves: the game sits in the top screen,
+the panels in the bottom screen, and the frame's own D-pad, circle pad,
+A/B/X/Y, START, SELECT and HOME (opens the MENU) are the touch controls.
+"DS skin" on the options page picks the top frame: **G1R sticker with the
+Game Boy Color border** (default), the plain sticker frame, a plain frame,
+a small-screen frame, or OFF for the bare layout.
 
 ## Other consoles
 

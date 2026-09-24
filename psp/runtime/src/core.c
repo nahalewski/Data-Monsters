@@ -317,6 +317,15 @@ static int c_gameRect(lua_State *L) {
                           (int)luaL_checkinteger(L, 3), (int)luaL_checkinteger(L, 4));
   return 0;
 }
+/* lovepsp.split() -> top, bottom heights of the DS halves */
+static int c_split(lua_State *L) {
+  int t, b;
+  plat_get_split(&t, &b);
+  lua_pushinteger(L, t); lua_pushinteger(L, b);
+  return 2;
+}
+/* lovepsp.hinge() -> foldable hinge angle in degrees, or -1 without a sensor */
+static int c_hinge(lua_State *L) { lua_pushnumber(L, plat_hinge()); return 1; }
 /* lovepsp.touches() -> { {x=, y=}, ... } fingers on the screen (logical px) */
 static int c_touches(lua_State *L) {
   int i = 0;
@@ -429,6 +438,7 @@ static int c_layout(lua_State *L) {
     const char *m = luaL_checkstring(L, 1);
     plat_set_layout(!strcmp(m, "ds") ? 1 : !strcmp(m, "dual") ? 2 : 0);
   }
+  if (lua_isnumber(L, 2) && lua_isnumber(L, 3)) plat_set_split((int)lua_tointeger(L, 2), (int)lua_tointeger(L, 3));
   lua_pushstring(L, plat_get_layout() == 1 ? "ds" : plat_get_layout() == 2 ? "dual" : "single");
   return 1;
 }
@@ -440,7 +450,7 @@ static const luaL_Reg core_funcs[] = {
   {"time", c_time}, {"sleep", c_sleep}, {"poll", c_poll}, {"setMode", c_setMode},
   {"getMode", c_getMode}, {"present", c_present}, {"os", c_os}, {"baseDir", c_baseDir},
   {"saveDir", c_saveDir}, {"power", c_power}, {"memory", c_memory}, {"log", c_log},
-  {"screen", c_screen}, {"touch", c_touch}, {"touchPad", c_touchPad}, {"touches", c_touches}, {"inject", c_inject}, {"gameRect", c_gameRect}, {"http_get", c_http_get}, {"unzip", c_unzip},
+  {"screen", c_screen}, {"touch", c_touch}, {"touchPad", c_touchPad}, {"touches", c_touches}, {"inject", c_inject}, {"gameRect", c_gameRect}, {"split", c_split}, {"hinge", c_hinge}, {"http_get", c_http_get}, {"unzip", c_unzip},
   {"rename", c_rename}, {"network", c_network}, {"layout", c_layout}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
 
 int luaopen_lovepsp(lua_State *L) {

@@ -32,6 +32,9 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
   public static native void nativeSetTouch(int on);
   public static native boolean nativeGetBottomScreen(int[] pixels, int w, int h);
   public static native void nativeTouch(int id, int down, float lx, float ly);
+  public static native void nativeSetHinge(float degrees);
+  public static native int nativeBottomHeight();
+  public static native int nativeTopHeight();
 
   private SensorManager sensors;
   private Sensor hinge;
@@ -75,6 +78,7 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
   public void onSensorChanged(SensorEvent e) {
     if (e.sensor.getType() == Sensor.TYPE_HINGE_ANGLE) {
       float a = e.values[0];
+      nativeSetHinge(a);
       if (lastHinge < 0 || Math.abs(a - lastHinge) > 5) { lastHinge = a; applyLayout(); }
     }
   }

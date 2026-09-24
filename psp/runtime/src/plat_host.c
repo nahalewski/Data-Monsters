@@ -49,9 +49,11 @@ static SDL_GameController *g_pad;
 static SDL_Joystick *g_joy; /* raw pad when no controller mapping exists (PS3) */
 static SDL_Renderer *g_ren;
 static SDL_Texture *g_tex;
-static uint32_t g_screen[PLAT_SCREEN_W * PLAT_SCREEN_H * 2]; /* double height for the DS layout */
+static uint32_t g_screen[PLAT_SCREEN_W * PLAT_MAX_LH]; /* tall enough for the DS layout with a skin */
 static int g_lh = PLAT_SCREEN_H; /* current logical height */
 static int g_ds;
+static int g_top = PLAT_SCREEN_H, g_bottom = PLAT_SCREEN_H; /* DS halves */
+static float g_hinge = -1;
 static char g_base[1024], g_save[1100], g_self[1100];
 static int g_headless, g_quit;
 static long g_frame, g_max_frames = -1;
@@ -142,6 +144,7 @@ int plat_init(int argc, char **argv) {
   if (getenv("LOVEPSP_TOUCH")) touch_set_enabled(atoi(getenv("LOVEPSP_TOUCH")));
 #endif
   if (getenv("LOVEPSP_LAYOUT") && !strcmp(getenv("LOVEPSP_LAYOUT"), "ds")) plat_set_layout(1);
+  if (getenv("LOVEPSP_HINGE")) g_hinge = (float)atof(getenv("LOVEPSP_HINGE"));
 #if defined(__PSL1GHT__)
   strcpy(g_base, PS3_BASE);
   mkdir(g_base, 0777);
@@ -257,27 +260,41 @@ int plat_get_layout(void) { return g_ds; }
  * controls below.  2 (dual): the same double-height screen, but the window
  * shows only the top half; the bottom half is read by plat_bottom_half()
  * for a second display. */
-void plat_set_layout(int mode) {
+static void relayout(void) {
   int shown;
-  if (mode < 0 || mode > 2) mode = 0;
-  if (mode == g_ds) return;
-  g_ds = mode;
-  g_lh = mode ? PLAT_SCREEN_H * 2 : PLAT_SCREEN_H;
-  shown = mode == 1 ? g_lh : PLAT_SCREEN_H;
-  touch_set_offset(mode ? PLAT_SCREEN_H : 0);
+  g_lh = g_ds ? g_top + g_bottom : PLAT_SCREEN_H;
+  shown = g_ds == 1 ? g_lh : (g_ds == 2 ? g_top : PLAT_SCREEN_H);
+  touch_set_offset(g_ds ? g_top : 0);
   if (g_ren) {
     if (g_tex) SDL_DestroyTexture(g_tex);
     SDL_RenderSetLogicalSize(g_ren, PLAT_SCREEN_W, shown);
     g_tex = SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, PLAT_SCREEN_W, shown);
   }
 }
+void plat_set_layout(int mode) {
+  if (mode < 0 || mode > 2) mode = 0;
+  if (mode == g_ds) return;
+  g_ds = mode;
+  relayout();
+}
+void plat_set_split(int top, int bottom) {
+  if (top < 64) top = PLAT_SCREEN_H;
+  if (bottom < 64) bottom = PLAT_SCREEN_H;
+  if (top + bottom > PLAT_MAX_LH) { top = PLAT_SCREEN_H; bottom = PLAT_SCREEN_H; }
+  if (top == g_top && bottom == g_bottom) return;
+  g_top = top; g_bottom = bottom;
+  if (g_ds) relayout();
+}
+void plat_get_split(int *top, int *bottom) { *top = g_top; *bottom = g_bottom; }
+void plat_set_hinge(float d) { g_hinge = d; }
+float plat_hinge(void) { return g_hinge; }
 
 /* bottom half of the logical screen as 0xAARRGGBB ints (dual mode) */
 int plat_bottom_half(uint32_t *out, int w, int h) {
   int x, y;
-  if (g_ds != 2 || w != PLAT_SCREEN_W || h != PLAT_SCREEN_H) return 0;
+  if (g_ds != 2 || w != PLAT_SCREEN_W || h != g_bottom) return 0;
   for (y = 0; y < h; y++) {
-    const uint32_t *s = g_screen + (long)(PLAT_SCREEN_H + y) * PLAT_SCREEN_W;
+    const uint32_t *s = g_screen + (long)(g_top + y) * PLAT_SCREEN_W;
     for (x = 0; x < w; x++) {
       uint32_t p = s[x];
       out[(long)y * w + x] = 0xff000000u | (PX_R(p) << 16) | (PX_G(p) << 8) | PX_B(p);
@@ -331,8 +348,8 @@ void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
      * control surface (touch pad, panels) */
     int y;
     if (mode == 4) mode = 1;
-    plat_blit_scaled(px, w, h, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_W, PLAT_SCREEN_H, mode, smooth);
-    for (y = PLAT_SCREEN_H; y < g_lh; y++) {
+    plat_blit_scaled(px, w, h, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_W, g_top, mode, smooth);
+    for (y = g_top; y < g_lh; y++) {
       uint32_t *row = g_screen + (long)y * PLAT_SCREEN_W;
       int x;
       for (x = 0; x < PLAT_SCREEN_W; x++) row[x] = PX(16, 16, 20, 255);
@@ -380,7 +397,7 @@ void plat_poll(PlatInput *in) {
         /* front panel only: the Vita reports the rear pad as a second device */
         if (e.tfinger.touchId == SDL_GetTouchDevice(0))
           touch_finger((long)e.tfinger.fingerId, e.type != SDL_FINGERUP, e.tfinger.x * PLAT_SCREEN_W,
-                       e.tfinger.y * (g_ds == 2 ? PLAT_SCREEN_H : g_lh));
+                       e.tfinger.y * (g_ds == 2 ? g_top : g_lh));
       } else if (touch_enabled() && (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP
                                      || e.type == SDL_MOUSEMOTION)) {
         /* desktop / Vita3K: the left mouse button is a finger */
@@ -397,7 +414,7 @@ void plat_poll(PlatInput *in) {
           int ww = PLAT_SCREEN_W, wh = PLAT_SCREEN_H;
           SDL_GetWindowSize(g_win, &ww, &wh);
           lx = (float)mx * PLAT_SCREEN_W / (ww > 0 ? ww : 1);
-          ly = (float)my * (g_ds == 2 ? PLAT_SCREEN_H : g_lh) / (wh > 0 ? wh : 1);
+          ly = (float)my * (g_ds == 2 ? g_top : g_lh) / (wh > 0 ? wh : 1);
         }
         touch_finger(-1, down, lx, ly);
       }
@@ -569,6 +586,18 @@ JNIEXPORT jboolean JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeGetBo
   ok = plat_bottom_half((uint32_t *)p, w, h);
   (*env)->ReleaseIntArrayElements(env, arr, p, 0);
   return ok ? JNI_TRUE : JNI_FALSE;
+}
+JNIEXPORT void JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeSetHinge(JNIEnv *env, jclass cls, jfloat degrees) {
+  (void)env; (void)cls;
+  g_hinge = degrees;
+}
+JNIEXPORT jint JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeBottomHeight(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return g_bottom;
+}
+JNIEXPORT jint JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeTopHeight(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return g_top;
 }
 JNIEXPORT void JNICALL Java_com_nahalewski_g1rports_MainActivity_nativeTouch(JNIEnv *env, jclass cls, jint id, jint down, jfloat lx, jfloat ly) {
   (void)env; (void)cls;

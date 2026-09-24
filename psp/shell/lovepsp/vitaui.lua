@@ -99,11 +99,20 @@ local function skinImage(file)
   return skinImages[file] or nil
 end
 
--- placement of a frame image scaled to the 272 px half height, centred
+-- a frame fills the width of its half: the two shells meet at the hinge
+-- like a real 3DS (top 480x320, bottom 480x360 for the supplied art)
 local function framePlacement(img)
-  local iw, ih = img:getDimensions()
-  local sc = PANEL_H / ih
-  return (SCREEN_W - iw * sc) / 2, sc
+  local iw = img:getDimensions()
+  local sc = SCREEN_W / iw
+  return 0, sc
+end
+
+local function frameHeight(file)
+  local img = skinImage(file)
+  if not img then return PANEL_H end
+  local _, ih = img:getDimensions()
+  local _, sc = framePlacement(img)
+  return math.floor(ih * sc + 0.5)
 end
 
 local function font(size) return state.opts.font(size) end
@@ -537,11 +546,8 @@ local function tapAt(x, y)
     return
   end
   if state.skin then
-    -- the floating MODS / MENU buttons first; inside the bottom screen
-    -- cutout the panels take taps; elsewhere the frame's buttons do
-    -- (see skinButtons)
-    if not state.left and x < 40 and math.abs(y - CIRCLE_Y) < 24 then M.openLeft() return end
-    if not state.right and x > SCREEN_W - 40 and math.abs(y - CIRCLE_Y) < 24 then openRight() return end
+    -- inside the bottom screen the panels take taps; elsewhere the shell's
+    -- buttons do (see skinButtons); START / SELECT / HOME open the panels
     local px, pw = panelRect("left")
     local inScreen = x >= px and x < px + pw and y >= state.panelY and y < state.panelY + state.panelH
     if not inScreen then return end
@@ -837,7 +843,7 @@ local function render()
   love.graphics.setBlendMode("alpha")
   love.graphics.translate(0, state.base)
   if state.skin then drawSkinFrames() end
-  if state.ds or state.circleTimer > 0 or state.left or state.right then
+  if not state.skin and (state.ds or state.circleTimer > 0 or state.left or state.right) then
     if not state.left then circle(18, CIRCLE_Y, "mods") end
     if not state.right then circle(SCREEN_W - 18, CIRCLE_Y, "menu") end
   end
@@ -847,10 +853,10 @@ local function render()
   love.graphics.translate(0, -state.panelY)
   if state.message then
     love.graphics.setColor(0, 0, 0, 0.7)
-    love.graphics.rectangle("fill", 120, PANEL_H - 40, 240, 22, 4, 4)
+    love.graphics.rectangle("fill", 120, state.panelH - 40, 240, 22, 4, 4)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(font(9))
-    love.graphics.printf(state.message, 124, PANEL_H - 35, 232, "center")
+    love.graphics.printf(state.message, 124, state.panelH - 35, 232, "center")
   end
   love.graphics.setCanvas()
   love.graphics.pop()
@@ -884,6 +890,7 @@ end
 function M.detach()
   state.attached = false
   state.skin = nil
+  if lovepsp.layout then lovepsp.layout(nil, PANEL_H, PANEL_H) end
   if lovepsp.gameRect then lovepsp.gameRect() end
   if lovepsp.inject then lovepsp.inject(0) end
   state.left, state.right = false, false
@@ -898,7 +905,8 @@ function M.update(dt)
   if lovepsp.screen then
     state.sw, state.sh = lovepsp.screen()
     state.ds = state.sh > PANEL_H
-    state.base = state.sh - PANEL_H
+    if lovepsp.split and state.ds then local top = lovepsp.split() state.base = top
+    else state.base = state.sh - PANEL_H end
   end
   -- skin: only in the DS layout; the drawn pad gives way to the frame
   -- the 3DS skin is for Android foldables: only there, only in the DS layout
@@ -907,6 +915,16 @@ function M.update(dt)
   if newSkin ~= state.skin then
     state.skin = newSkin
     if lovepsp.touchPad then lovepsp.touchPad(not newSkin and (state.opts.padDefault and state.opts.padDefault() or false) or false) end
+    -- the halves take the frames' heights so both shells fill the width
+    if lovepsp.layout then
+      if newSkin then lovepsp.layout(nil, frameHeight(SKIN_TOP[newSkin].file), frameHeight(SKIN_BOTTOM.file))
+      else lovepsp.layout(nil, PANEL_H, PANEL_H) end
+    end
+    if lovepsp.screen then
+      state.sw, state.sh = lovepsp.screen()
+      state.ds = state.sh > PANEL_H
+    end
+    if lovepsp.split then local top = lovepsp.split() state.base = top end
     applyGameRect()
   end
   if state.skin then

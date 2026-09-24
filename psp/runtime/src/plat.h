@@ -61,6 +61,14 @@ void plat_set_bars(int left, int right);
 /* screen layout: 0 = one screen, 1 = "DS": the game in the top half of a
  * double-height logical screen, the controls and panels in the bottom half */
 void plat_set_layout(int mode); /* 0 single, 1 ds, 2 dual (bottom half on a second display) */
+/* heights of the two halves in the ds/dual layouts (default 272 + 272; a
+ * skin uses its frames' heights, e.g. 320 + 360) */
+void plat_set_split(int top, int bottom);
+void plat_get_split(int *top, int *bottom);
+#define PLAT_MAX_LH 720
+/* foldable hinge angle in degrees from the host app, -1 = no hinge sensor */
+void plat_set_hinge(float degrees);
+float plat_hinge(void);
 int plat_get_layout(void);
 void plat_screen_size(int *w, int *h);
 int plat_bottom_half(uint32_t *out, int w, int h); /* dual mode: 0xAARRGGBB rows of the bottom half */

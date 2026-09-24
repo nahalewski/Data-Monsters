@@ -169,10 +169,16 @@ shows the bottom half.
 
 On Android foldables only (the DS layout the hinge sensor selects) a
 **3DS skin** (`shell/assets/skin3ds`, art supplied by the port's author)
-frames both halves: the game sits in the top screen, the panels in the
-bottom screen, and the button sprites drawn into the bottom shell's
-sockets (D-pad, circle pad, A/B/X/Y, START, SELECT, HOME opening the MENU)
-are the touch controls; a pressed one is drawn darker and nudged. The
+turns the phone into a 3DS. Both shells fill the width of the screen and
+meet at the hinge (the logical screen becomes 480x680: top shell 480x320,
+bottom shell 480x360). The game sits in the top screen; START opens the
+MENU and SELECT the MODS panel in the bottom screen, each closing the
+other; the button sprites drawn into the bottom shell's sockets (D-pad,
+circle pad, A/B/X/Y, START, SELECT, HOME opening the MENU) are the touch
+controls, a pressed one drawn darker and nudged. There are no floating
+buttons in this mode. When the app starts on a foldable that is not yet
+open, the closed lid ("Unfold to Play") fills the screen until the phone
+is unfolded, or any button or tap, and then the launcher appears. The
 Vita and the PS3 never show the skin.
 "DS skin" on the options page picks the top frame: **G1R sticker with the
 Game Boy Color border** (default), the plain sticker frame, a plain frame,

@@ -18,9 +18,10 @@ import android.view.View;
  * to the display; touches go back as logical bottom-half coordinates.
  */
 public class SecondScreen extends Presentation {
-  private static final int W = 480, H = 272;
-  private final int[] pixels = new int[W * H];
-  private final Bitmap bitmap = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+  private static final int W = 480;
+  private int H = 272;
+  private int[] pixels = new int[W * H];
+  private Bitmap bitmap = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
   private final Handler handler = new Handler();
   private View view;
   private final Rect dst = new Rect();
@@ -49,7 +50,7 @@ public class SecondScreen extends Presentation {
         int action = e.getActionMasked();
         for (int i = 0; i < e.getPointerCount(); i++) {
           int id = e.getPointerId(i);
-          float lx = (e.getX(i) - ox) / s, ly = (e.getY(i) - oy) / s + H; // bottom half of the 480x544 screen
+          float lx = (e.getX(i) - ox) / s, ly = (e.getY(i) - oy) / s + MainActivity.nativeTopHeight(); // below the top half
           boolean down = !(action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
               || (action == MotionEvent.ACTION_POINTER_UP && e.getActionIndex() == i));
           MainActivity.nativeTouch(2000 + id, down ? 1 : 0, lx, ly);
@@ -63,6 +64,12 @@ public class SecondScreen extends Presentation {
 
   private final Runnable tick = new Runnable() {
     public void run() {
+      int h = MainActivity.nativeBottomHeight();
+      if (h != H && h > 0) {
+        H = h;
+        pixels = new int[W * H];
+        bitmap = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+      }
       if (MainActivity.nativeGetBottomScreen(pixels, W, H)) {
         bitmap.setPixels(pixels, 0, W, 0, 0, W, H);
         if (view != null) view.invalidate();

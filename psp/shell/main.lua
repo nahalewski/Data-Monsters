@@ -1081,11 +1081,39 @@ end
 
 ---------------------------------------------------------------- love callbacks
 
+-- Foldables (Android): the closed 3DS lid fills the screen until the
+-- phone is unfolded (hinge angle) or any button / tap, then the launcher.
+local lidImage
+local function drawLid()
+  love.graphics.clear(0.02, 0.02, 0.03, 1)
+  if lidImage == nil then
+    local ok, img = pcall(love.graphics.newImage, "assets/skin3ds/lid.png")
+    lidImage = ok and img or false
+    if ok then img:setFilter("linear", "linear") end
+  end
+  if lidImage then
+    local iw, ih = lidImage:getDimensions()
+    local s = math.min(SCREEN_W / iw, SCREEN_H / ih)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(lidImage, (SCREEN_W - iw * s) / 2, (SCREEN_H - ih * s) / 2, 0, s, s)
+  end
+  love.graphics.setFont(font(9))
+  love.graphics.setColor(0.7, 0.7, 0.75, 0.8 + 0.2 * math.sin(love.timer.getTime() * 3))
+  love.graphics.printf("Unfold to play  -  or press any button", 0, SCREEN_H - 14, SCREEN_W, "center")
+end
+
+local function lidDone()
+  Shell.page = "cards"
+end
+
 function love.load()
   local t0 = love.timer.getTime()
   love.graphics.setDefaultFilter("nearest", "nearest")
   loadOptions()
   refresh()
+  -- a foldable that is not open yet shows the lid first
+  local hinge = lovepsp.hinge and lovepsp.hinge() or -1
+  if love._os == "Android" and hinge >= 0 and hinge < 60 then Shell.page = "lid" end
   log(("launcher: ready in %.2fs (%.2fs since power-on)"):format(
     love.timer.getTime() - t0, love.timer.getTime()))
   -- boot_once.txt: written before a restart (Vita menu QUIT -> "launcher",
@@ -1164,6 +1192,15 @@ local function pollTaps()
 end
 
 function love.update(dt)
+  if Shell.page == "lid" then
+    local hinge = lovepsp.hinge and lovepsp.hinge() or -1
+    if hinge >= 60 then lidDone() end
+    if lovepsp.touches then
+      local ok, t = pcall(lovepsp.touches)
+      if ok and t and t[1] then lidDone() end
+    end
+    return
+  end
   if Shell.page == "game" then
     require("src.core.PlatformHooks").update(Game, dt)
     if VitaUI then VitaUI.update(dt) end
@@ -1176,6 +1213,7 @@ function love.update(dt)
 end
 
 function love.draw()
+  if Shell.page == "lid" then return drawLid() end
   if Shell.page == "game" then return Game:draw() end
   if Shell.page == "import" then return drawImport() end
   if Shell.page == "message" then return drawMessage() end
@@ -1245,6 +1283,7 @@ local function nubPress(axis, value)
 end
 
 function love.gamepadpressed(joystick, button)
+  if Shell.page == "lid" then return lidDone() end
   if Shell.page == "game" then return Game:gamepadpressed(joystick, button) end
   if Shell.page == "message" then
     if button == "a" or button == "b" then Shell.page = Shell.messageBack end

@@ -714,9 +714,20 @@ local function drawSkinFrames()
       local qw, qh = b.sprite[3], b.sprite[4]
       local scale = (b.wide and (target * 2 / qw)) or (target / math.max(qw, qh))
       local cx, cy = ox + b.x * sc, b.y * sc
-      local nudge = lit and 1.5 or 0
-      if lit then love.graphics.setColor(0.72, 0.72, 0.75, 1) else love.graphics.setColor(1, 1, 1, 1) end
-      love.graphics.draw(sheet, b.quad, cx - qw * scale / 2, cy - qh * scale / 2 + nudge, 0, scale, scale)
+      -- the sheet has no pressed frames: a press sinks the sprite (smaller,
+      -- darker, pushed down); the stick and the pad lean the way they are held
+      local dx, dy = 0, 0
+      if b.kind == "dpad" and lit then
+        local lean = b.r * sc * 0.12
+        if state.held & B.left ~= 0 then dx = dx - lean end
+        if state.held & B.right ~= 0 then dx = dx + lean end
+        if state.held & B.up ~= 0 then dy = dy - lean end
+        if state.held & B.down ~= 0 then dy = dy + lean end
+      end
+      local press = lit and 0.93 or 1
+      local ps = scale * press
+      if lit then love.graphics.setColor(0.68, 0.68, 0.72, 1) else love.graphics.setColor(1, 1, 1, 1) end
+      love.graphics.draw(sheet, b.quad, cx - qw * ps / 2 + dx, cy - qh * ps / 2 + dy + (lit and 1.5 or 0), 0, ps, ps)
     end
   end
 end

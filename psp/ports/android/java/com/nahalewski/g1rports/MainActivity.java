@@ -69,6 +69,7 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
   protected void onResume() {
     super.onResume();
     if (hinge != null) sensors.registerListener(this, hinge, SensorManager.SENSOR_DELAY_NORMAL);
+    reportFoldState();
     updateSecondScreen();
     applyLayout();
   }
@@ -82,7 +83,17 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
   @Override
   public void onConfigurationChanged(Configuration c) {
     super.onConfigurationChanged(c);
+    reportFoldState();
     applyLayout();
+  }
+
+  /** Without a hinge sensor the display tells: the cover screen of a
+   *  foldable is phone-sized (under 600 dp on its short side), the inner
+   *  screen tablet-sized.  Reported as a hinge angle (0 closed, 180 open). */
+  private void reportFoldState() {
+    if (hinge != null) return;
+    int sw = getResources().getConfiguration().smallestScreenWidthDp;
+    nativeSetHinge(sw > 0 && sw < 600 ? 0f : 180f);
   }
 
   @Override

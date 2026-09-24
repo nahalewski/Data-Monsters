@@ -1163,10 +1163,30 @@ local function drawLid()
   end
 end
 
-local function lidDone()
-  Shell.page = "cards"
+-- the lid covers whatever was on screen while the phone is closed (the
+-- cover screen); opening the phone returns to it
+local function lidShow()
+  if Shell.page == "lid" then return end
+  Shell.lidReturn = Shell.page
+  Shell.page = "lid"
+end
+local function lidDone(byHand)
+  Shell.page = Shell.lidReturn or "cards"
+  Shell.lidReturn = nil
+  Shell.lidSnooze = byHand or false   -- dismissed by hand: stay open until the phone really opens
   if lovepsp.setOverlay then lovepsp.setOverlay(nil) end
   if FoldUI and FoldUI.swallowTouch then FoldUI.swallowTouch() end
+end
+local function foldCheck()
+  if love._os ~= "Android" or not lovepsp.hinge then return end
+  local hinge = lovepsp.hinge()
+  local folded = hinge >= 0 and hinge < 60
+  if folded then
+    if not Shell.lidSnooze then lidShow() end
+  else
+    Shell.lidSnooze = false
+    if Shell.page == "lid" then lidDone() end
+  end
 end
 
 function love.load()
@@ -1213,7 +1233,7 @@ function love.load()
   -- a foldable that is not open yet shows the lid first
   -- the Fold app always starts on the closed lid (the top shell); a tap, any
   -- button, or unfolding the phone opens it
-  if love._os == "Android" then Shell.page = "lid" Shell.lidHinge = lovepsp.hinge and lovepsp.hinge() or -1 end
+  foldCheck()
   log(("launcher: ready in %.2fs (%.2fs since power-on)"):format(
     love.timer.getTime() - t0, love.timer.getTime()))
   -- boot_once.txt: written before a restart (Vita menu QUIT -> "launcher",
@@ -1292,14 +1312,11 @@ local function pollTaps()
 end
 
 function love.update(dt)
+  foldCheck()
   if Shell.page == "lid" then
-    -- unfolding: the hinge was seen closed on this page and is open now
-    local hinge = lovepsp.hinge and lovepsp.hinge() or -1
-    if hinge >= 0 and hinge < 60 then Shell.lidHinge = hinge end
-    if hinge >= 60 and Shell.lidHinge and Shell.lidHinge >= 0 and Shell.lidHinge < 60 then lidDone() end
     if lovepsp.touches then
       local ok, t = pcall(lovepsp.touches)
-      if ok and t and t[1] then lidDone() end
+      if ok and t and t[1] then lidDone(true) end
     end
     return
   end
@@ -1392,7 +1409,7 @@ local function nubPress(axis, value)
 end
 
 function love.gamepadpressed(joystick, button)
-  if Shell.page == "lid" then return lidDone() end
+  if Shell.page == "lid" then return lidDone(true) end
   if Shell.page == "game" then return Game:gamepadpressed(joystick, button) end
   if Shell.page == "cards" and foldActive() and joystick ~= nil and FoldUI.press(button) then return end
   if Shell.page == "message" then

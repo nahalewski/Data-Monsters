@@ -215,11 +215,17 @@ reopens its audio device when the app regains focus.
 
 ### Android
 
-The Fold app always runs as the 3DS: it starts on the closed lid (the top
-shell filling the screen; a tap, any button, or unfolding the phone opens
-it), then shows the foldable launcher below, and plays in the DS layout
+The Fold app always runs as the 3DS: while the phone is closed (the
+cover screen) it shows the closed lid, the top shell across the whole
+screen; opening the phone brings the opened 3DS with the foldable
+launcher (a tap or button on the lid also opens it until the phone is
+really opened).  Closing the phone mid-game shows the lid and pauses the
+game, like closing a 3DS.  The fold state comes from the hinge sensor, or
+from the screen size when there is none.  It plays in the DS layout
 (game in the top shell's screen, the bottom shell with its button sprites
-below).  The PSP-style card launcher is not used on Android.  While a game
+below); the bottom shell's buttons sink, darken and lean while held (the
+button sheet has no pressed frames).  The PSP-style card launcher is not
+used on Android.  While a game
 runs and no panel is open, the bottom screen shows the game's Pokemon
 animated (`shell/assets/idle`, one-row sprite sheets made from the animated
 Generation V sprites in github.com/PokeAPI/sprites by

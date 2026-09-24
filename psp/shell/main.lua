@@ -1181,6 +1181,11 @@ local function foldCheck()
   if love._os ~= "Android" or not lovepsp.hinge then return end
   local hinge = lovepsp.hinge()
   local folded = hinge >= 0 and hinge < 60
+  -- the lid is a landscape picture: only on a landscape screen
+  if folded and lovepsp.screen then
+    local ok, sw, sh = pcall(lovepsp.screen)
+    if ok and sw and sh and sh > sw then folded = false end
+  end
   if folded then
     if not Shell.lidSnooze then lidShow() end
   else

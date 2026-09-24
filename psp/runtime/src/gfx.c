@@ -413,6 +413,9 @@ static void fill_poly(const float *pts, int n, Paint *p) {
   float miny, maxy;
   int y0, y1, y, i;
   static float xs[512];
+  /* opaque untextured fill with no shader: plain stores */
+  int solid = !p->sh && p->blend == B_ALPHA && !p->premul && p->c[3] == 255;
+  px_t solidpx = PX(p->c[0], p->c[1], p->c[2], 255);
   if (n < 3) return;
   miny = maxy = pts[1];
   for (i = 1; i < n; i++) {
@@ -443,7 +446,8 @@ static void fill_poly(const float *pts, int n, Paint *p) {
       px_t *row = p->dst + (long)y * p->dw;
       if (xa < p->cx0) xa = p->cx0;
       if (xb > p->cx1) xb = p->cx1;
-      for (x = xa; x < xb; x++) frag(p, &row[x], 0xffffffffu);
+      if (solid) { for (x = xa; x < xb; x++) row[x] = solidpx; }
+      else for (x = xa; x < xb; x++) frag(p, &row[x], 0xffffffffu);
     }
   }
 }

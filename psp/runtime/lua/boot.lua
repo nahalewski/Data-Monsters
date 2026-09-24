@@ -720,6 +720,8 @@ love.lovepsp = {
   power = core.power,
   touch = core.touch,       -- on-screen controls (Vita): touch(on) / touch()
   touches = core.touches,   -- fingers on the screen, launcher taps
+  setOverlay = love.graphics._setOverlay, -- HUD canvas over the presented frame
+  setBars = love.graphics._setBars,       -- side bars the game shrinks between
   log = core.log,
   env = ENV,
 }
@@ -891,7 +893,7 @@ local function boot()
 end
 
 local ok, err = xpcall(boot, debug.traceback)
-local step
+local step, quitStatus
 if ok then
   local okRun, loop = xpcall(love.run, debug.traceback)
   if okRun then step = loop else err = loop end
@@ -915,6 +917,8 @@ while true do
     if not okE or r then break end
     step = handler
   elseif result ~= nil then
+    quitStatus = result
     break
   end
 end
+if quitStatus == "restart" then return "restart" end

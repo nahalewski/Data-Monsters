@@ -85,7 +85,7 @@ full 16:9 panel).
   Lua bytecode on first boot (`lovepsp-bytecode` marker in the version
   folder) and ROM hashes are cached in `rom_index.lua`; copying a cache to a
   desktop install afterwards is not supported.
-- No online play, mods panel, save editor, updater or touch controls.
+- No online play, save editor or updater; mods have their own page (below).
 - Shaders: only the engine's own palette shaders run (as native kernels);
   `SHADERFX`/CRT-style post-processing is unavailable.
 
@@ -94,11 +94,54 @@ The engine is drawn at 160x144 on the CPU and scaled by the display driver,
 which is what makes the CPU rasterizer feasible on a 333 MHz MIPS core.
 `lovepsp.log` next to the EBOOT records errors and load timings.
 
+## Mods
+
+Upstream's example mods ship in the archive, all off by default; toggle
+them on the launcher's Mods page (Triangle > Mods, X toggles). A toggle sets
+the shared flag and clears the per-game overrides the desktop launcher
+writes, so the card's state is what the game loads; `lovepsp.log` lists the
+loaded mods and any loader error after each boot (`mods:` line).
+
+Community mods come from their authors' GitHub repositories, as listed by
+the project's official mod index, never from gen1recomp.com (upstream's
+README calls that site unaffiliated and untrustworthy):
+
+```sh
+python3 psp/tools/fetch_mods.py psp/mods_extra      # 160 of 197 index entries
+bash psp/build.sh                                    # PSP: mods up to 1 MB each
+bash psp/ports/vita/build.sh                         # Vita/PS3: all fetched mods
+```
+
+`mods_extra/` is gitignored (each mod carries its own licence) and
+`FETCH-REPORT.txt` lists what was skipped: mods that need the network, a
+voxel renderer, or more than 8 MB of assets. Of the 171 mods in a full
+build, 148 initialise cleanly on Yellow; the rest are Gen 2 only, depend on
+a mod that is not there, need the desktop launcher's asset packs, or use
+GLSL shaders. The Dramatic Shape voxel mod and the ShaderFX presets cannot
+run here: both are GPU shader renderers and this runtime rasterises on the
+CPU with the engine's palette shaders built in (ShaderFX also downloads its
+presets at runtime; the consoles have no network access in this port).
+
 ## Other consoles
 
 The same runtime builds for the **PS Vita / Vita TV** (`ports/vita`, SDL2
 on vitasdk, `.vpk`) and the **PS3** (`ports/ps3`, SDL2 on PSL1GHT, `.pkg` for
 CFW/HEN and RPCS3 plus a `GEN1RECMP/` folder for `/dev_hdd0/game/`).
+
+The Vita build is a native Vita application (ARM, vitasdk), not the PSP
+EBOOT under the Vita's PSP emulator; Vita3K runs it as such. It has touch
+controls: an on-screen D-pad, A/B and START/SELECT beside the game
+(`runtime/src/touch.c`), taps on the launcher's cards and rows, and, in a
+game, two floating buttons that appear when the screen is touched. The
+left one slides in a MODS panel (toggle mods, APPLY restarts the game with
+them), the right one a menu that replaces the game's START menu: POKeMON,
+ITEM, the trainer card, SAVE, GAME OPTION (the engine's options), OPTIONS
+(this port's settings), MODS and QUIT (back to the launcher). The game
+shrinks between open panels and keeps running under the physical
+controls; START toggles the menu. Gen 1 rows are the engine's own START
+menu items, so rows mods add appear too; Gen 2 keeps its START menu, opened
+from the panel. `shell/lovepsp/vitaui.lua` draws the panels into a canvas
+the runtime composites over the presented frame (`lovepsp.setOverlay`).
 `build_all.sh` (or `build_all.bat` on Windows) builds every target whose
 toolchain is installed and zips them into `dist/gen1recomp-ports.zip`. The
 PS3 build packs Lua source instead of bytecode (big-endian PPU). Neither

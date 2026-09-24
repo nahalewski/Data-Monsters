@@ -94,6 +94,19 @@ cp -r "$UPSTREAM_DIR/mods" "$GAME/mods"
 # lift it so each example is a card on the shell's Mods page, off by default
 for m in "$GAME"/mods/examples/example_*; do [ -d "$m" ] && mv "$m" "$GAME/mods/"; done
 rm -rf "$GAME/mods/examples"
+# community mods fetched by tools/fetch_mods.py (gitignored; their own
+# licences).  MODS_MAX_KB caps a mod's size: the PSP build takes the small
+# ones (its 32/64 MB has to hold the game too); the Vita/PS3 builds take all.
+MODS_MAX_KB="${MODS_MAX_KB:-1024}"
+if [ -d "$HERE/mods_extra" ]; then
+  n=0
+  for m in "$HERE"/mods_extra/*/; do
+    [ -f "$m/manifest.json" ] || continue
+    kb=$(du -sk "$m" | cut -f1)
+    if [ "$kb" -le "$MODS_MAX_KB" ]; then cp -r "$m" "$GAME/mods/$(basename "$m")"; n=$((n + 1)); fi
+  done
+  echo "community mods packed: $n (<= ${MODS_MAX_KB} KB each)"
+fi
 cp "$UPSTREAM_DIR/LICENSE.MD" "$GAME/LICENSE-gen1recomp.md"
 cat > "$GAME/lovepsp/build_info.lua" <<EOF
 return { upstream = "$UPSTREAM_COMMIT", built = "$(date -u +%Y-%m-%dT%H:%MZ)" }

@@ -36,6 +36,7 @@ int _newlib_heap_size_user = 256 * 1024 * 1024;
 #include <unistd.h>
 #include "plat.h"
 #include "plat_common.h"
+#include "lp.h"
 
 int lp_write_png(const char *path, const uint32_t *px, int w, int h);
 
@@ -60,6 +61,7 @@ typedef struct { long from, len; uint32_t btn; float tx, ty; } Hold; /* tx >= 0:
 static Hold g_holds[256];
 static int g_nholds;
 static long g_pad_frame, g_touch_frame; /* last frame each source was used, for the overlay */
+static const uint32_t *g_hud; static int g_hud_w, g_hud_h; /* shell HUD layer (sidebars) */
 
 static uint32_t btn_from_name(const char *n) {
   static const struct { const char *n; uint32_t b; } map[] = {
@@ -196,6 +198,30 @@ int plat_touch(int on) {
   return touch_enabled();
 }
 int plat_touch_get(int i, float *x, float *y) { return touch_get(i, x, y); }
+void plat_set_overlay(const uint32_t *px, int w, int h) { g_hud = px; g_hud_w = w; g_hud_h = h; }
+void plat_set_bars(int left, int right) { plat_layout_set_bars(left, right); }
+
+static void composite_hud(void) {
+  int x, y;
+  if (!g_hud || g_hud_w != PLAT_SCREEN_W || g_hud_h != PLAT_SCREEN_H) return;
+  for (y = 0; y < PLAT_SCREEN_H; y++) {
+    const uint32_t *s = g_hud + (long)y * PLAT_SCREEN_W;
+    uint32_t *d = g_screen + (long)y * PLAT_SCREEN_W;
+    for (x = 0; x < PLAT_SCREEN_W; x++) {
+      uint32_t sp = s[x];
+      int a = PX_A(sp);
+      if (a == 0) continue;
+      if (a == 255) { d[x] = sp | PX_AMASK; continue; }
+      {
+        uint32_t dp = d[x];
+        int r = PX_R(dp) + (((int)PX_R(sp) - (int)PX_R(dp)) * a) / 255;
+        int g = PX_G(dp) + (((int)PX_G(sp) - (int)PX_G(dp)) * a) / 255;
+        int b = PX_B(dp) + (((int)PX_B(sp) - (int)PX_B(dp)) * a) / 255;
+        d[x] = PX(r, g, b, 255);
+      }
+    }
+  }
+}
 
 void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
   int i;
@@ -203,10 +229,12 @@ void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
     /* a game (small source) sits between the control bars; the launcher
      * fills the screen and takes taps directly through lovepsp.touches() */
     mode = 4;
-    touch_set_visible(w * 2 <= PLAT_SCREEN_W);
+    /* the pad hides while the shell's sidebars own the bars */
+    touch_set_visible(w * 2 <= PLAT_SCREEN_W && !plat_layout_custom_bars());
   }
   plat_blit_scaled(px, w, h, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_W, PLAT_SCREEN_H, mode, smooth);
   if (touch_visible()) touch_draw(g_screen, PLAT_SCREEN_W, PLAT_SCREEN_H, g_pad_frame > g_touch_frame);
+  composite_hud();
   g_frame++;
   for (i = 0; i < g_nshots; i++)
     if (g_shots[i].frame == g_frame) lp_write_png(g_shots[i].path, g_screen, PLAT_SCREEN_W, PLAT_SCREEN_H);

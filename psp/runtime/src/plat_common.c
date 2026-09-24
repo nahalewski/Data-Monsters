@@ -4,6 +4,10 @@
 #include "plat_common.h"
 #include "lp.h"
 
+static int g_bar_l = -1, g_bar_r = -1;
+void plat_layout_set_bars(int left, int right) { g_bar_l = left; g_bar_r = right; }
+int plat_layout_custom_bars(void) { return g_bar_l >= 0 || g_bar_r >= 0; }
+
 static void compute_rect(int sw, int sh, int dw, int dh, int mode,
                          int *ox, int *oy, int *ow, int *oh) {
   int w = sw, h = sh;
@@ -16,11 +20,17 @@ static void compute_rect(int sw, int sh, int dw, int dh, int mode,
     int s = dw / sw < dh / sh ? dw / sw : dh / sh;
     if (s < 1) s = 1;
     w = sw * s; h = sh * s;
-  } else if (mode == 4) { /* touch layout: fit between the control bars */
-    int iw = dw - 2 * TOUCH_BAR;
+  } else if (mode == 4) { /* touch layout: fit between the side bars */
+    int bl = g_bar_l >= 0 ? g_bar_l : TOUCH_BAR, br = g_bar_r >= 0 ? g_bar_r : TOUCH_BAR;
+    int iw = dw - bl - br;
     if (sw * 2 > dw || iw < sw) { w = sw < dw ? sw : dw; h = sh < dh ? sh : dh; }
     else if ((long)iw * sh <= (long)dh * sw) { w = iw; h = (int)((long)sh * iw / sw); }
     else { h = dh; w = (int)((long)sw * dh / sh); }
+    if (w > dw) w = dw;
+    if (h > dh) h = dh;
+    *ox = bl + (iw - w) / 2; *oy = (dh - h) / 2; *ow = w; *oh = h;
+    if (*ox < 0) *ox = 0;
+    return;
   }
   if (w > dw) w = dw;
   if (h > dh) h = dh;

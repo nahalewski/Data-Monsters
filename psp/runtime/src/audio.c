@@ -228,6 +228,14 @@ static Source *checksrc(lua_State *L, int i) {
   return o->s;
 }
 
+/* before a Lua state closes (restart): forget every playing source so the
+ * mixer never touches objects the collector is about to free */
+void lp_audio_reset(void) {
+  plat_audio_lock();
+  g_nactive = 0;
+  plat_audio_unlock();
+}
+
 /* main thread: free consumed queue buffers */
 static void reap(Source *s) {
   Pcm *freed[QMAX];

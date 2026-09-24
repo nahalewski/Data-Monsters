@@ -23,3 +23,4 @@ psp/ports/ps3/build/
 psp/ports/ps3/pkgfiles/
 psp/ports/ps3/*.self
 psp/ports/ps3/*.pkg
+psp/mods_extra/

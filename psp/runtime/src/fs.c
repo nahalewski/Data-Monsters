@@ -189,7 +189,7 @@ int fs_init(const char *argv0, const char *base_dir, const char *save_dir) {
   add_mount(M_DIR, "", "", "<save>", 1);
   set_save_mount();
   if (is_dir_real(g_source)) add_mount(M_DIR, g_source, "", "<source>", 1);
-  if (pak_open(plat_self_path())) add_mount(M_PAK, NULL, "", "<pak>", 1);
+  if (g_pak || pak_open(plat_self_path())) add_mount(M_PAK, NULL, "", "<pak>", 1);
   else {
     char p[600];
     snprintf(p, sizeof p, "%sgame.pak", g_base);

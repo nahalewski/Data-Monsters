@@ -46,10 +46,16 @@ static void fatal(const char *msg) {
   }
 }
 
+void lp_audio_reset(void);
+void lp_gfx_reset(void);
+
 int main(int argc, char **argv) {
   lua_State *L;
   int status;
+  int restart;
   if (plat_init(argc, argv) != 0) return 1;
+again:
+  restart = 0;
   L = luaL_newstate();
   if (!L) { plat_debug("cannot create Lua state\n"); plat_shutdown(); return 1; }
   /* small heap: collect a little more eagerly than the default 200% pause */
@@ -82,7 +88,12 @@ int main(int argc, char **argv) {
   lua_pushcfunction(L, lp_newTransform);
   status = lua_pcall(L, 1, 1, -3);
   if (status != LUA_OK) fatal(lua_tostring(L, -1));
+  /* boot.lua returns "restart" for love.event.quit("restart"): the shell's
+   * way back to the launcher from a game, with a fresh Lua state */
+  else if (lua_type(L, -1) == LUA_TSTRING && !strcmp(lua_tostring(L, -1), "restart")) restart = 1;
+  lp_audio_reset();
   lua_close(L);
+  if (restart) { lp_gfx_reset(); goto again; }
   plat_shutdown();
   return 0;
 }

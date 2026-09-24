@@ -4,6 +4,9 @@
 /* mode 4 = touch layout: a small source sits in a 240x216 box between two
  * 120 px bars for the on-screen controls (touch.c) */
 #define TOUCH_BAR 120
+/* side bars for mode 4: -1 = the touch default */
+void plat_layout_set_bars(int left, int right);
+int plat_layout_custom_bars(void);
 void plat_blit_scaled(const uint32_t *src, int sw, int sh,
                       uint32_t *dst, int dstride, int dw, int dh,
                       int mode, int smooth);

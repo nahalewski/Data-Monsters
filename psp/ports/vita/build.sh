@@ -6,6 +6,7 @@
 # Vita/Vita TV on HENkaku/h-encore or in Vita3K).  ROMs go in
 # ux0:data/gen1recomp/ (or roms/ under it); saves in ux0:data/gen1recomp/save/.
 set -euo pipefail
+export MODS_MAX_KB="${MODS_MAX_KB:-999999}"  # all fetched mods: these consoles have the memory
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 export VITASDK="${VITASDK:-/usr/local/vitasdk}"

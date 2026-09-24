@@ -49,6 +49,10 @@ const char *plat_os_name(void);
 /* on-screen touch controls (Vita); -1 = query */
 int plat_touch(int on);
 int plat_touch_get(int i, float *x, float *y); /* i-th finger in screen pixels */
+/* HUD layer composited over the presented frame (screen-sized RGBA, or NULL) */
+void plat_set_overlay(const uint32_t *px, int w, int h);
+/* side bars the game is fitted between in the touch layout (-1 = default) */
+void plat_set_bars(int left, int right);
 
 /* audio: the platform pulls stereo int16 frames at PLAT_AUDIO_RATE from cb */
 #define PLAT_AUDIO_RATE 44100

@@ -7,6 +7,7 @@
 #                                          dev_hdd0/game/); RPCS3 installs the .pkg too
 #         ROMs: /dev_hdd0/game/GEN1RECMP/USRDIR/ (or roms/ under it)
 set -euo pipefail
+export MODS_MAX_KB="${MODS_MAX_KB:-999999}"  # all fetched mods: these consoles have the memory
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 export PS3DEV="${PS3DEV:-/usr/local/ps3dev}"

@@ -62,6 +62,7 @@ local Shell = {
   blink = 0,
 }
 local Game
+local VitaUI -- lovepsp.vitaui while a game runs with touch (Vita)
 local fonts = {}
 local drawChrome, font -- defined with the drawing code below
 local Mods, scanMods    -- the mods page, defined after the options
@@ -353,11 +354,18 @@ scanMods = function()
   if Mods.cursor > #Mods.list then Mods.cursor = math.max(1, #Mods.list) end
 end
 
+-- The loader reads a per-game entry (options.modsByVersion[version][id])
+-- before the shared flag, and the desktop launcher writes those, so a
+-- toggle here sets the shared flag and clears every per-game override:
+-- what the card shows is what the game loads.
 local function toggleMod(entry)
   local SaveData = require("src.core.SaveData")
   local options = SaveData.loadOptions()
   entry.enabled = not entry.enabled
   SaveData.setModEnabled(options, entry.id, entry.enabled)
+  for _, v in ipairs(GameVersion.ORDER or GAMES) do
+    SaveData.setModEnabled(options, entry.id, entry.enabled, v)
+  end
   SaveData.saveOptions(options)
 end
 
@@ -652,6 +660,45 @@ local function bootGame(version)
   end
   log(("game: %s loaded, Lua heap %d KiB (%s)"):format(version, math.floor(collectgarbage("count")),
     table.concat(marks, ", ")))
+  -- Vita: floating touch sidebars (mods, and a menu replacing START)
+  VitaUI = nil
+  if lovepsp.touch and lovepsp.touch() and lovepsp.setOverlay then
+    local okUI, ui = pcall(require, "lovepsp.vitaui")
+    if okUI then
+      VitaUI = ui
+      local rows = {}
+      for _, row in ipairs(OPTION_ROWS) do
+        if row[1] ~= "Mods" and row[1] ~= "Delete import" then rows[#rows + 1] = row end
+      end
+      VitaUI.attach(Game, {
+        font = font, log = log, version = version, generation = gen,
+        optionRows = rows,
+        applyOptions = function() applyOptions() saveOptions() end,
+        mods = function() scanMods() return Mods.list end,
+        toggleMod = toggleMod,
+        restart = function(bootVersion)
+          pcall(love.filesystem.write, "boot_once.txt", bootVersion or "launcher")
+          love.event.quit("restart")
+        end,
+      })
+    else
+      log("vitaui: " .. tostring(ui))
+    end
+  end
+  -- what the mod loader made of the enabled mods, for lovepsp.log
+  local status = Game and Game.modStatus
+  if status then
+    local parts = {}
+    for _, m in ipairs(status.available or {}) do
+      if m.enabled then
+        parts[#parts + 1] = ("%s=%s%s"):format(m.id or "?", m.state or "?",
+          m.error and (" (" .. tostring(m.error):gsub("\n", " "):sub(1, 160) .. ")") or "")
+      end
+    end
+    log(("mods: %d available, %d loaded; %s"):format(#(status.available or {}),
+      #(status.loaded or {}), #parts > 0 and table.concat(parts, "; ") or "none enabled"))
+    for _, e in ipairs(status.errors or {}) do log("mod error: " .. tostring(e):sub(1, 300)) end
+  end
 end
 
 ---------------------------------------------------------------- drawing
@@ -908,10 +955,19 @@ function love.load()
   refresh()
   log(("launcher: ready in %.2fs (%.2fs since power-on)"):format(
     love.timer.getTime() - t0, love.timer.getTime()))
+  -- boot_once.txt: written before a restart (Vita menu QUIT -> "launcher",
+  -- mods APPLY -> the game to relaunch); consumed here
+  local once = love.filesystem.read("boot_once.txt")
+  once = once and once:match("%a+")
+  if once then love.filesystem.remove("boot_once.txt") end
   -- a direct-boot shortcut: save/pokemon-love2d/autoboot.txt naming a version
   local auto = love.filesystem.read("autoboot.txt")
   auto = auto and auto:match("%a+")
-  if auto and Shell.ready[auto] then bootGame(auto) end
+  if once and once ~= "launcher" and Shell.ready[once] then
+    bootGame(once)
+  elseif auto and not once and Shell.ready[auto] then
+    bootGame(auto)
+  end
   -- LOVEPSP_AUTOIMPORT=<version> in env.txt: start that import on boot
   -- (used to drive the port in an emulator with no input injection)
   local autoImport = lovepsp.env.LOVEPSP_AUTOIMPORT
@@ -976,7 +1032,9 @@ end
 
 function love.update(dt)
   if Shell.page == "game" then
-    return require("src.core.PlatformHooks").update(Game, dt)
+    require("src.core.PlatformHooks").update(Game, dt)
+    if VitaUI then VitaUI.update(dt) end
+    return
   elseif Shell.page == "import" then
     stepImport()
   else

@@ -88,8 +88,13 @@ Launcher: D-pad/nub to pick a card, **X** play/import, **Triangle** options,
 - Confirm button (Cross = A or Circle = A)
 - Music ON/OFF and the music sample rate (22050 Hz default; 44100 Hz
   doubles the synthesizer's cost, 11025 Hz halves it)
-- Mods: upstream's example mods ship in the EBOOT, all **off** by default;
-  toggle them here (X). Your own mods go in `save/pokemon-love2d/mods/<mod>/`
+- Mods: upstream's example mods and the community mods bundled by
+  `tools/fetch_mods.py` (the PSP build takes those up to 1 MB) ship in the
+  EBOOT, all **off** by default; toggle them here (X). The change applies
+  the next time a game starts. After a boot, `lovepsp.log` has a `mods:`
+  line naming each enabled mod's state and any error, so a mod that does
+  nothing can be checked there. Enabling many mods costs memory: on a 32 MB
+  PSP-1000 keep it to a few. Your own mods go in `save/pokemon-love2d/mods/<mod>/`
   (a folder with `manifest.json`, Lua source only) and appear in the same
   list. Mods that need an extra asset pack (Mystery Dungeon, Link to the
   Past) cannot be used: those packs come from the desktop launcher's

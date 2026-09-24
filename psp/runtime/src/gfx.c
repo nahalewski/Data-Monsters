@@ -207,6 +207,7 @@ static Tex *g_back;       /* window backbuffer */
 static Tex *g_target;     /* current render target */
 static int g_default_linear;
 static int g_present_mode = 1, g_present_smooth = 1;
+static Tex *g_overlay;    /* HUD canvas composited by the platform after scaling */
 static lua_State *g_L;
 static int g_draw_calls;
 
@@ -2077,7 +2078,37 @@ void gfx_present(void) {
     lua_setfield(L, LUA_REGISTRYINDEX, "lovepsp.capture");
     g_capture_pending = 0;
   }
+  plat_set_overlay(g_overlay ? g_overlay->px : NULL, g_overlay ? g_overlay->w : 0, g_overlay ? g_overlay->h : 0);
   plat_present(g_back->px, g_back->w, g_back->h, g_present_mode, g_present_smooth);
+}
+
+/* love.graphics._setOverlay(canvas|nil): a screen-sized canvas drawn over the
+ * presented frame at 1:1 (the shell's Vita sidebars) */
+static int g_setOverlay(lua_State *L) {
+  Tex *t = NULL;
+  if (!lua_isnoneornil(L, 1)) {
+    TexObj *o = (TexObj *)lp_checkobj(L, 1, &Canvas_type);
+    t = o->t;
+  }
+  if (t) t->refs++;
+  if (g_overlay) tex_release(g_overlay);
+  g_overlay = t;
+  return 0;
+}
+/* love.graphics._setBars(left, right): side bars for the touch layout */
+static int g_setBars(lua_State *L) {
+  plat_set_bars((int)luaL_optinteger(L, 1, -1), (int)luaL_optinteger(L, 2, -1));
+  return 0;
+}
+
+/* between Lua states (restart): drop everything that pointed into the old one */
+void lp_gfx_reset(void) {
+  if (g_overlay) { tex_release(g_overlay); g_overlay = NULL; }
+  plat_set_overlay(NULL, 0, 0);
+  plat_set_bars(-1, -1);
+  if (g_target && g_target != g_back) g_target = g_back;
+  g_depth = 0;
+  g_L = NULL;
 }
 
 static int g_present(lua_State *L) { (void)L; gfx_present(); return 0; }
@@ -2213,7 +2244,7 @@ static const luaL_Reg g_funcs[] = {
   {"setFrontFaceWinding", g_noop}, {"discard", g_noop}, {"isGammaCorrect", g_false},
   {"getStackDepth", g_getStackDepth},
   {"_resetFrameStats", g_resetFrameStats}, {"_setPresentScaling", g_setPresentScaling},
-  {"_getPresentScaling", g_getPresentScaling}, {NULL, NULL}};
+  {"_getPresentScaling", g_getPresentScaling}, {"_setOverlay", g_setOverlay}, {"_setBars", g_setBars}, {NULL, NULL}};
 
 int lp_open_graphics(lua_State *L) {
   g_L = L;

@@ -1,6 +1,6 @@
 -- Launcher for Android foldables in the 3DS skin: the selected game's
 -- cartridge fills the top screen, a tabbed panel (GAMES, MODS, FIND, ONLINE,
--- SKINS, IMPORT) the bottom screen.  It draws the shells and the bottom
+-- IMPORT) in the G1R Deluxe look the bottom screen.  It draws the shells and the bottom
 -- panel into the runtime's overlay canvas and takes taps, the pad and the
 -- sticks; the top screen is the launcher's own window, presented inside
 -- the top frame's screen.  Everything behind the tabs is this port's own
@@ -24,6 +24,7 @@ local state = {
   prevButtons = 0, stick = {},
   carts = {}, base = 0, panel = { x = 0, y = 0, w = 0, h = 0 },
   message = nil, messageT = 0,
+  modFilter = false, settings = nil, help = nil, setCursor = 1, setScroll = 0,
 }
 
 local function font(size) return state.opts.font(size) end
@@ -65,9 +66,10 @@ local function feedRows()
   return rows
 end
 
+local modsForFilter   -- defined with the MODS tab
 local function rowsForTab()
   local t = TABS[state.tab]
-  if t == "MODS" then return modRows() end
+  if t == "MODS" then return modsForFilter() end
   if t == "FIND" then return feedRows() end
   return {}
 end
@@ -166,8 +168,13 @@ end
 
 ---------------------------------------------------------------- input
 
-local ROW_H = 18
-local function visibleRows() return math.max(1, math.floor((state.panel.h - 60) / ROW_H)) end
+-- everything tappable registers a hit rectangle while it is drawn
+local hits = {}
+local function hit(x, y, w, h, fn) hits[#hits + 1] = { x = x, y = y, w = w, h = h, fn = fn } end
+
+local ROW_H = 16
+local function listRows() return math.max(1, math.floor((state.panel.h - 28 - 54 - 16 - 4) / ROW_H)) end
+local function visibleRows() return listRows() end
 
 local function clampScroll(n)
   local vis = visibleRows()
@@ -190,11 +197,48 @@ local function stickStep(name, value, dt)
   return 0
 end
 
+-- the settings modal (the gear): the launcher's option rows with steppers
+local SET_VIS = 4
+local function optionRows() return state.opts.options and state.opts.options() or {} end
+local function openSettings() state.settings = true state.setCursor, state.setScroll = 1, 0 end
+local function closeSettings() state.settings = nil if state.opts.applyOptions then state.opts.applyOptions() end end
+local function changeOption(i, dir)
+  local row = optionRows()[i]
+  if not row then return end
+  row[3](dir)
+  if state.opts.applyOptions then state.opts.applyOptions() end
+end
+local function setMove(d)
+  local n = #optionRows()
+  if n == 0 then return end
+  state.setCursor = (state.setCursor - 1 + d) % n + 1
+  if state.setCursor - 1 < state.setScroll then state.setScroll = state.setCursor - 1 end
+  if state.setCursor > state.setScroll + SET_VIS then state.setScroll = state.setCursor - SET_VIS end
+end
+
+local function openPatchNotes()
+  if not (lovepsp.openUrl and lovepsp.openUrl(RELEASES_PAGE)) then say("Patch notes: " .. RELEASES_PAGE) end
+end
+
 function M.press(button)
+  if state.help then
+    if button == "b" or button == "a" then state.help = nil end
+    return true
+  end
+  if state.settings then
+    if button == "b" then closeSettings() return true end
+    if button == "dpup" then setMove(-1) return true end
+    if button == "dpdown" then setMove(1) return true end
+    if button == "dpleft" then changeOption(state.setCursor, -1) return true end
+    if button == "dpright" then changeOption(state.setCursor, 1) return true end
+    if button == "a" then changeOption(state.setCursor, 0) return true end
+    return true
+  end
   local rows = rowsForTab()
   if button == "leftshoulder" or button == "l" then setTab(state.tab - 1) return true end
   if button == "rightshoulder" or button == "r" then setTab(state.tab + 1) return true end
-  if TABS[state.tab] == "GAMES" or TABS[state.tab] == "IMPORT" then
+  if button == "start" then openSettings() return true end
+  if TABS[state.tab] == "GAMES" or TABS[state.tab] == "IMPORT" or TABS[state.tab] == "ONLINE" then
     if button == "dpleft" then state.opts.moveGame(-1) return true end
     if button == "dpright" then state.opts.moveGame(1) return true end
     if button == "a" then activate() return true end
@@ -203,6 +247,7 @@ function M.press(button)
     if button == "dpup" then state.cursor = state.cursor - 1 clampScroll(#rows) return true end
     if button == "dpdown" then state.cursor = state.cursor + 1 clampScroll(#rows) return true end
     if button == "a" then activate(rows[state.cursor]) return true end
+    if button == "y" and TABS[state.tab] == "MODS" then state.modFilter = not state.modFilter return true end
   end
   if button == "b" then setTab(1) return true end
   return false
@@ -213,231 +258,422 @@ local function tapAt(x, y)
   local p = state.panel
   if y < state.base then
     -- the top screen: the cartridge
-    if TABS[state.tab] == "GAMES" then state.opts.primary() end
+    if TABS[state.tab] == "GAMES" and not state.settings and not state.help then state.opts.primary() end
     return
   end
-  local lx, ly = x - p.x, y - state.base - p.y
-  if lx < 0 or ly < 0 or lx >= p.w or ly >= p.h then return end
-  -- tab bar
-  if ly < 30 then
-    local i = math.floor(lx / (p.w / #TABS)) + 1
-    if TABS[i] then setTab(i) end
-    return
+  local lx, ly = x, y - state.base - p.y
+  if lx < p.x or ly < 0 or lx >= p.x + p.w or ly >= p.h then return end
+  for i = #hits, 1, -1 do
+    local h = hits[i]
+    if lx >= h.x and lx < h.x + h.w and ly >= h.y and ly < h.y + h.h then h.fn() return end
   end
-  local t = TABS[state.tab]
-  if t == "GAMES" then
-    if ly >= 56 and ly < 76 then state.opts.primary() return end
-    if ly >= 30 and ly < 56 then
-      if lx < p.w * 0.25 then state.opts.moveGame(-1) elseif lx > p.w * 0.75 then state.opts.moveGame(1) end
-      return
-    end
-    if ly >= p.h - 24 then
-      if lx < p.w / 2 then updateAction() else state.opts.rescan() end
-      return
-    end
-  elseif t == "IMPORT" then
-    if ly >= p.h - 44 and ly < p.h - 22 then state.opts.primary() return end
-    if ly >= p.h - 22 then state.opts.rescan() return end
-  elseif t == "ONLINE" then
-    return
-  else
-    local rows = rowsForTab()
-    if ly >= p.h - 22 then
-      if lx < 40 then state.scroll = math.max(0, state.scroll - visibleRows())
-      elseif lx < 80 then state.scroll = math.min(math.max(0, #rows - visibleRows()), state.scroll + visibleRows()) end
-      return
-    end
-    local i = math.floor((ly - 34) / ROW_H) + 1 + state.scroll
-    if rows[i] then
-      state.cursor = i
-      activate(rows[i])
-    end
-  end
+  if state.help then state.help = nil end
 end
 
 local function controller(dt)
   local raw = lovepsp.rawInput
   local B = lovepsp.buttonBits
   if not raw or not B then return end
-  local rows = rowsForTab()
   local mv = stickStep("y", raw.ay or 0, dt)
-  if mv ~= 0 and TABS[state.tab] ~= "GAMES" then state.cursor = state.cursor + mv clampScroll(#rows) end
   local mx = stickStep("x", raw.ax or 0, dt)
-  if mx ~= 0 and (TABS[state.tab] == "GAMES" or TABS[state.tab] == "IMPORT") then state.opts.moveGame(mx) end
+  if state.settings then
+    if mv ~= 0 then setMove(mv) end
+    if mx ~= 0 then changeOption(state.setCursor, mx) end
+    return
+  end
+  local rows = rowsForTab()
+  local t = TABS[state.tab]
+  if mv ~= 0 and (t == "MODS" or t == "FIND") then state.cursor = state.cursor + mv clampScroll(#rows) end
+  if mx ~= 0 and (t == "GAMES" or t == "IMPORT" or t == "ONLINE") then state.opts.moveGame(mx) end
 end
 
 ---------------------------------------------------------------- drawing
 
-local function button(x, y, w, h, label, fill, textColor, size)
+-- the G1R Deluxe look: near-black navy, outlined rounded cards, blue
+-- primary buttons, yellow badges; the theme tints the background and the
+-- buttons.  The runtime's small font is an 8x8 bitmap (10 px lines), so
+-- the panel (about 260 x 174 logical px) holds 32 characters a line.
+local UI = {
+  bg = { 0.07, 0.08, 0.11 }, card = { 0.10, 0.12, 0.16 }, line = { 1, 1, 1, 0.18 },
+  text = { 0.94, 0.95, 0.97 }, dim = { 0.62, 0.65, 0.72 }, mute = { 0.42, 0.45, 0.52 },
+  blue = { 0.13, 0.42, 0.75 }, yellow = { 0.98, 0.80, 0.10 }, green = { 0.45, 0.90, 0.55 },
+  white = { 0.94, 0.95, 0.97 }, dark = { 0.07, 0.08, 0.11 },
+}
+local CART_COLOR = { red = { 0.90, 0.20, 0.22 }, blue = { 0.25, 0.45, 0.90 }, yellow = { 0.98, 0.80, 0.10 }, green = { 0.25, 0.70, 0.35 },
+  gold = { 0.86, 0.66, 0.18 }, silver = { 0.75, 0.78, 0.83 }, crystal = { 0.35, 0.75, 0.90 }, firered = { 0.95, 0.36, 0.14 }, leafgreen = { 0.45, 0.80, 0.32 } }
+local F = 8       -- the small font (any size below 18 is the same bitmap)
+local CW, LH = 8, 10
+
+local function rr(mode, x, y, w, h, r) love.graphics.rectangle(mode, x, y, w, h, r or 3, r or 3, 3) end
+local function card(x, y, w, h, fill)
+  love.graphics.setColor(fill or UI.card)
+  rr("fill", x, y, w, h)
+  love.graphics.setColor(UI.line)
+  rr("line", x, y, w, h)
+end
+local function clip(text, n) text = tostring(text) return #text > n and text:sub(1, n - 1) .. "." or text end
+local function label(text, x, y, color, w, align)
+  love.graphics.setFont(font(F))
+  love.graphics.setColor(color or UI.text)
+  if w then love.graphics.printf(text, x, y, w, align or "left") else love.graphics.print(text, x, y) end
+end
+local function button(x, y, w, h, text, fill, textColor, fn, outline)
   love.graphics.setColor(fill)
-  love.graphics.rectangle("fill", x, y, w, h)
-  love.graphics.setColor(textColor or { 1, 1, 1, 1 })
-  love.graphics.setFont(font(size or 9))
-  love.graphics.printf(label, x, y + (h - (size or 9)) / 2 - 1, w, "center")
+  rr("fill", x, y, w, h)
+  if outline then
+    love.graphics.setColor(UI.line)
+    rr("line", x, y, w, h)
+  end
+  label(text, x, y + math.floor((h - LH) / 2) + 1, textColor or UI.white, w, "center")
+  if fn then hit(x, y, w, h, fn) end
+end
+local function badge(x, y, text, fill, color)
+  local w = #text * CW + 6
+  love.graphics.setColor(fill)
+  rr("fill", x, y, w, LH, 3)
+  label(text, x, y + 1, color or UI.dark, w, "center")
+  return w
 end
 
-local function drawTabs(p, t)
-  local tw = p.w / #TABS
-  for i, name in ipairs(TABS) do
-    local x = p.x + (i - 1) * tw
-    local sel = i == state.tab
-    love.graphics.setColor(sel and t.accent or { t.text[1], t.text[2], t.text[3], 0.10 })
-    love.graphics.rectangle("fill", x + 2, 3, tw - 4, 24)
-    love.graphics.setColor(sel and t.title or t.text)
-    love.graphics.setFont(font(6))
-    love.graphics.printf(name, x, 14, tw, "center")
-    -- a little glyph above the label
-    local g = ({ "[]", "*", "?", "@", "v" })[i]
-    love.graphics.printf(g, x, 5, tw, "center")
-    if name == "ONLINE" then
-      love.graphics.setColor(0.95, 0.8, 0.2, 1)
-      love.graphics.rectangle("fill", x + tw - 22, 4, 20, 6)
-      love.graphics.setColor(0, 0, 0, 1)
-      love.graphics.setFont(font(5))
-      love.graphics.printf("N/A", x + tw - 22, 4, 20, "center")
+-- tiny line icons, drawn into a box at x, y of size s
+local function icon(kind, x, y, s, color)
+  love.graphics.setColor(color)
+  love.graphics.setLineWidth(1.2)
+  local c = s / 2
+  if kind == "mods" then          -- puzzle piece: a square with two knobs
+    love.graphics.rectangle("line", x + 3, y + 5, s - 8, s - 8)
+    love.graphics.circle("fill", x + c - 1, y + 4.5, 2)
+    love.graphics.circle("fill", x + s - 4.5, y + c + 1, 2)
+  elseif kind == "find" then      -- magnifier
+    love.graphics.circle("line", x + c - 1.5, y + c - 1.5, s / 3.4)
+    love.graphics.line(x + c + 1, y + c + 1, x + s - 3, y + s - 3)
+  elseif kind == "online" then    -- globe
+    love.graphics.circle("line", x + c, y + c, s / 2.7)
+    love.graphics.ellipse("line", x + c, y + c, s / 6.5, s / 2.7)
+    love.graphics.line(x + c - s / 2.7, y + c, x + c + s / 2.7, y + c)
+  elseif kind == "import" then    -- download arrow on a tray
+    love.graphics.line(x + c, y + 3, x + c, y + s - 6)
+    love.graphics.line(x + c - 3, y + s - 9, x + c, y + s - 6, x + c + 3, y + s - 9)
+    love.graphics.line(x + 4, y + s - 3.5, x + s - 4, y + s - 3.5)
+  elseif kind == "swap" then      -- two arrows
+    love.graphics.line(x + 3, y + c - 2, x + s - 3, y + c - 2)
+    love.graphics.line(x + s - 6, y + c - 5, x + s - 3, y + c - 2, x + s - 6, y + c + 1)
+    love.graphics.line(x + 3, y + c + 3, x + s - 3, y + c + 3)
+    love.graphics.line(x + 6, y + c, x + 3, y + c + 3, x + 6, y + c + 6)
+  elseif kind == "gear" then      -- ring with teeth
+    love.graphics.circle("line", x + c, y + c, s / 4.2)
+    for i = 0, 7 do
+      local a = i * math.pi / 4
+      love.graphics.line(x + c + math.cos(a) * s / 3.4, y + c + math.sin(a) * s / 3.4, x + c + math.cos(a) * s / 2.4, y + c + math.sin(a) * s / 2.4)
     end
+  elseif kind == "close" then
+    love.graphics.line(x + 4, y + 4, x + s - 4, y + s - 4)
+    love.graphics.line(x + s - 4, y + 4, x + 4, y + s - 4)
+  end
+  love.graphics.setLineWidth(1)
+end
+
+local function drawHeader(p)
+  -- the logo: G1R in yellow with a blue edge, then the port's name
+  love.graphics.setFont(font(F))
+  for dx = -1, 1 do for dy = -1, 1 do
+    love.graphics.setColor(0.18, 0.30, 0.55, 1)
+    love.graphics.print("G1R", p.x + 7 + dx, 5 + dy)
+  end end
+  love.graphics.setColor(UI.yellow)
+  love.graphics.print("G1R", p.x + 7, 5)
+  label("Ports", p.x + 7 + 3 * CW + 4, 5, UI.white)
+  -- swap game / settings / close
+  local bx = p.x + p.w - 6 - 3 * 20 + 2
+  local kinds = { { "swap", function() state.opts.moveGame(1) end }, { "gear", openSettings },
+                  { "close", function() love.event.quit() end } }
+  for i, k in ipairs(kinds) do
+    local x = bx + (i - 1) * 20
+    card(x, 3, 18, 15)
+    icon(k[1], x + 2, 3, 14, UI.text)
+    hit(x - 1, 2, 20, 17, k[2])
   end
 end
 
-local function drawGamesTab(p, t)
+local TAB_ICON = { GAMES = "games", MODS = "mods", FIND = "find", ONLINE = "online", IMPORT = "import" }
+local TAB_Y, TAB_H = 21, 17
+local function tabWidth(name) return #name * CW + 4 end
+local function drawTabs(p)
+  local total = -4
+  for _, name in ipairs(TABS) do total = total + tabWidth(name) + 4 end
+  local x = p.x + math.floor((p.w - total) / 2)
   local g = state.opts.game()
-  local short = g.name:gsub("^Pokemon ", "")
-  love.graphics.setColor(t.text)
-  love.graphics.setFont(font(14))
-  love.graphics.print(short:sub(1, 9), p.x + 14, 33)
-  local badge, bc
-  if g.ready then badge, bc = "Ready", { 0.3, 0.85, 0.45, 1 }
-  elseif g.rom then badge, bc = "Import", { 0.95, 0.8, 0.2, 1 }
-  else badge, bc = "No ROM", { 0.85, 0.3, 0.3, 1 } end
-  love.graphics.setColor(bc)
-  love.graphics.rectangle("line", p.x + 96, 35, 56, 13)
-  love.graphics.setFont(font(7))
-  love.graphics.printf(badge, p.x + 96, 38, 56, "center")
-  love.graphics.setColor(t.dim)
-  love.graphics.setFont(font(6))
-  love.graphics.print(g.ready and "(PRESS THE CART TO PLAY)" or g.rom and "(PRESS THE CART TO IMPORT)" or "(PUT THE ROM NEXT TO THE APP)", p.x + 14, 50)
-  love.graphics.setFont(font(9))
-  love.graphics.print("<", p.x + 3, 36)
-  love.graphics.print(">", p.x + p.w - 10, 36)
-  button(p.x + 8, 60, p.w - 16, 16, g.ready and "PLAY" or g.rom and "IMPORT ROM" or "NO ROM FOUND",
-    g.ready and { 0.2, 0.45, 0.9, 1 } or g.rom and { 0.95, 0.8, 0.2, 1 } or { 0.35, 0.35, 0.4, 1 },
-    g.rom and not g.ready and { 0, 0, 0, 1 } or nil, 9)
-  -- SAVE box
-  love.graphics.setColor(t.text[1], t.text[2], t.text[3], 0.08)
-  love.graphics.rectangle("fill", p.x + 8, 80, p.w - 16, 44)
-  love.graphics.setColor(t.text)
-  love.graphics.setFont(font(9))
-  love.graphics.print("SAVE", p.x + 14, 83)
-  love.graphics.setFont(font(6))
-  love.graphics.setColor(t.dim)
-  love.graphics.print(g.save and "Save found: CONTINUE on the title screen" or "No saves yet - start a new game", p.x + 14, 96)
-  button(p.x + 14, 106, p.w - 28, 13, g.save and ("SAVE: " .. g.save) or "+ NEW GAME (title screen)", g.save and { 0.3, 0.75, 0.45, 1 } or { 0.25, 0.6, 0.4, 1 }, { 0, 0, 0, 1 }, 6)
-  -- footer: version, update, rescan (the credit line is on the top screen)
-  love.graphics.setColor(t.dim)
-  love.graphics.setFont(font(5))
-  love.graphics.printf("Ported by nahalewski  -  " .. (state.opts.versionLabel or ""), p.x + 6, p.h - 30, p.w - 12, "center")
+  for i, name in ipairs(TABS) do
+    local sel = i == state.tab
+    local w = tabWidth(name)
+    -- the icon box: white when selected
+    love.graphics.setColor(sel and UI.white or UI.card)
+    rr("fill", x, TAB_Y, w, TAB_H)
+    love.graphics.setColor(name == "GAMES" and (CART_COLOR[g.version] or UI.line) or UI.line)
+    rr("line", x, TAB_Y, w, TAB_H)
+    if name == "GAMES" then
+      label(g.name:gsub("^Pokemon ", ""):sub(1, 1), x + 8, TAB_Y + 4, CART_COLOR[g.version] or UI.text)
+      love.graphics.setColor(sel and UI.dark or UI.text)
+      love.graphics.polygon("fill", x + w - 15, TAB_Y + 6, x + w - 5, TAB_Y + 6, x + w - 10, TAB_Y + 11)
+    else
+      icon(TAB_ICON[name], x + math.floor(w / 2) - 8, TAB_Y + 1, 16, sel and UI.dark or UI.text)
+    end
+    if name == "ONLINE" then badge(x + w - 26, TAB_Y + 9, "N/A", UI.yellow) end
+    label(name, x - 2, TAB_Y + TAB_H + 2, sel and UI.white or UI.dim, w + 4, "center")
+    hit(x - 2, TAB_Y - 1, w + 4, TAB_H + 14, function() setTab(i) end)
+    x = x + w + 4
+  end
+  love.graphics.setColor(UI.line)
+  love.graphics.line(p.x, TAB_Y + TAB_H + 13, p.x + p.w, TAB_Y + TAB_H + 13)
+end
+local BODY_Y = TAB_Y + TAB_H + 16     -- 54
+local FOOT_H = 28
+local function bodyH(p) return p.h - FOOT_H - BODY_Y end
+
+local function drawFooter(p)
+  local y = p.h - FOOT_H + 2
+  love.graphics.setColor(UI.line)
+  love.graphics.line(p.x, y - 2, p.x + p.w, y - 2)
+  -- the upstream credit chip, the update button and the release notes
+  local x = p.x + 6
+  button(x, y, 76, 13, "BOIS CLUB", { 0, 0, 0, 1 }, UI.white, function()
+    if lovepsp.openUrl then lovepsp.openUrl("https://github.com/bryanthaboi/gen1recomp") end
+  end)
   local st = state.updateStatus or ""
-  local ul = state.update and ("UPDATE " .. state.update.tag)
-    or (st:find("no release") and "NO RELEASE YET" or st:find("up to date") and "UP TO DATE" or st:find("check") and "CHECKING..."
-        or st:find("network") and "NO NETWORK" or st ~= "" and "CHECK FAILED" or "CHECK UPDATES")
-  button(p.x + 8, p.h - 20, p.w / 2 - 12, 14, ul, state.update and { 0.95, 0.8, 0.2, 1 } or { t.text[1], t.text[2], t.text[3], 0.15 }, state.update and { 0, 0, 0, 1 } or t.text, 6)
-  button(p.x + p.w / 2 + 4, p.h - 20, p.w / 2 - 12, 14, "RESCAN ROMS", { t.text[1], t.text[2], t.text[3], 0.15 }, t.text, 6)
+  local ul = state.update and ("Update v" .. clip(state.update.tag, 5))
+    or (st:find("no release") and "No release" or st:find("up to date") and "Up to date" or st:find("check") and "Checking"
+        or st:find("network") and "Offline" or st ~= "" and "Retry" or "Updates")
+  button(x + 80, y, 88, 13, ul, state.update and UI.yellow or UI.card, state.update and UI.dark or UI.text, updateAction, not state.update)
+  button(x + 172, y, p.w - 12 - 172, 13, "Notes", UI.card, UI.text, openPatchNotes, true)
+  label(clip("Ported by nahalewski " .. (state.opts.portVersion and state.opts.portVersion ~= "" and ("v" .. state.opts.portVersion) or ""), 32), p.x + 4, p.h - LH - 2, UI.mute, p.w - 8, "center")
 end
 
-local function drawList(p, t, rows, kind)
-  local vis = visibleRows()
-  local y = 34
-  love.graphics.setFont(font(8))
+local function drawGamesTab(p)
+  local g = state.opts.game()
+  local y = BODY_Y
+  card(p.x + 6, y, p.w - 12, 36)
+  label(clip(g.name, 22), p.x + 12, y + 3, UI.text)
+  local st, sc = g.ready and { "Ready to play", UI.green } or g.rom and { "ROM found - import it", UI.yellow } or { "No ROM found", { 0.90, 0.35, 0.35 } }
+  label(st[1], p.x + 12, y + 13, st[2])
+  label(g.save and "Save found - CONTINUE" or "No save yet", p.x + 12, y + 23, UI.dim)
+  button(p.x + p.w - 68, y + 9, 56, 18, g.ready and "Play" or g.rom and "Import" or "No ROM",
+    g.ready and UI.blue or g.rom and UI.yellow or UI.mute, g.rom and not g.ready and UI.dark or UI.white, state.opts.primary)
+  y = y + 42
+  button(p.x + 6, y, 14, 13, "<", UI.card, UI.text, function() state.opts.moveGame(-1) end, true)
+  card(p.x + 22, y, 100, 13)
+  label(clip(g.name:gsub("^Pokemon ", ""), 12), p.x + 22, y + 2, UI.text, 100, "center")
+  button(p.x + 124, y, 14, 13, ">", UI.card, UI.text, function() state.opts.moveGame(1) end, true)
+  button(p.x + p.w - 70, y, 64, 13, "Rescan", UI.card, UI.text, state.opts.rescan, true)
+  y = y + 17
+  label(g.ready and "Tap the cart or press X to play." or g.rom and "Tap Import to build the game." or "Put the ROM next to the app.", p.x + 6, y + 2, UI.dim, p.w - 12, "center")
+end
+
+modsForFilter = function()
+  local rows = modRows()
+  if not state.modFilter then return rows end
+  local v = state.opts.game().version
+  local out = {}
+  for _, r in ipairs(rows) do
+    local games = r.entry.games
+    local ok = type(games) ~= "table" or #games == 0
+    if not ok then for _, gv in ipairs(games) do if gv == v then ok = true end end end
+    if ok then out[#out + 1] = r end
+  end
+  return out
+end
+
+local function drawRows(p, y, h, rows, kind)
+  card(p.x + 6, y, p.w - 12, h)
+  local vis = math.max(1, math.floor((h - 4) / ROW_H))
+  if #rows == 0 then
+    local text = kind == "mod" and "No mods installed.\nInstall one from FIND, or copy\na mod into mods/ via USB."
+      or (state.feedStatus or "")
+    label(text, p.x + 12, y + math.floor(h / 2) - 15, UI.dim, p.w - 24, "center")
+    return
+  end
+  if state.scroll > math.max(0, #rows - vis) then state.scroll = math.max(0, #rows - vis) end
+  local ry = y + 2
+  local more = #rows > vis
+  local rw = p.w - 16 - (more and 14 or 0)
   for i = state.scroll + 1, math.min(#rows, state.scroll + vis) do
     local row = rows[i]
     local sel = i == state.cursor
-    love.graphics.setColor(t.text[1], t.text[2], t.text[3], sel and 0.16 or 0.06)
-    love.graphics.rectangle("fill", p.x + 6, y, p.w - 12, ROW_H - 2)
     if sel then
-      love.graphics.setColor(t.accent)
-      love.graphics.rectangle("fill", p.x + 6, y, 3, ROW_H - 2)
+      love.graphics.setColor(1, 1, 1, 0.08)
+      rr("fill", p.x + 8, ry, rw, ROW_H - 1, 2)
     end
     if kind == "mod" then
       local on = row.entry.enabled
-      love.graphics.setColor(on and t.accent or t.dim)
-      love.graphics.rectangle("fill", p.x + 12, y + 3, 18, 10)
-      love.graphics.setColor(on and t.title or t.bg)
-      love.graphics.rectangle("fill", on and p.x + 22 or p.x + 14, y + 5, 6, 6)
-      love.graphics.setColor(t.text)
-      love.graphics.setFont(font(7))
-      love.graphics.print(tostring(row.label):sub(1, 26), p.x + 36, y + 5)
-      love.graphics.setColor(t.dim)
-      love.graphics.setFont(font(6))
-      love.graphics.print("v" .. tostring(row.entry.version or ""), p.x + p.w - 60, y + 6)
-      love.graphics.setFont(font(8))
-    elseif kind == "feed" then
-      love.graphics.setColor(t.text)
-      love.graphics.setFont(font(7))
-      love.graphics.print(tostring(row.label):sub(1, 22), p.x + 12, y + 5)
-      local tag = row.installed and (row.installed == row.version and "INSTALLED" or "UPDATE " .. row.version) or "INSTALL " .. row.version
-      love.graphics.setColor(row.installed == row.version and t.dim or t.accent)
-      love.graphics.setFont(font(6))
-      love.graphics.printf(tag, p.x + p.w - 86, y + 6, 78, "right")
-      love.graphics.setFont(font(8))
+      love.graphics.setColor(on and UI.blue or UI.mute)
+      rr("fill", p.x + 12, ry + 4, 16, 8, 4)
+      love.graphics.setColor(UI.white)
+      love.graphics.circle("fill", on and p.x + 24 or p.x + 16, ry + 8, 3)
+      label(clip(row.label, 18), p.x + 34, ry + 3, UI.text)
+      label(clip("v" .. tostring(row.entry.version or ""), 6), p.x + 8 + rw - 52, ry + 3, UI.dim, 48, "right")
     else
-      love.graphics.setColor(t.text)
-      love.graphics.print(row.label, p.x + 12, y + 1)
-      love.graphics.setColor(t.dim)
-      love.graphics.setFont(font(6))
-      love.graphics.print(tostring(row.row[2]()):sub(1, 44), p.x + 12, y + 10)
-      love.graphics.setFont(font(8))
+      label(clip(row.label, 16), p.x + 12, ry + 3, UI.text)
+      local tag = row.installed and (row.installed == row.version and "Installed" or "Update") or "Install"
+      local fill = row.installed == row.version and UI.card or UI.blue
+      button(p.x + 8 + rw - 80, ry + 1, 76, ROW_H - 3, tag, fill, UI.white, nil, fill == UI.card)
     end
-    y = y + ROW_H
+    hit(p.x + 8, ry, rw, ROW_H, function() state.cursor = i activate(row) end)
+    ry = ry + ROW_H
   end
-  -- strip
-  button(p.x + 6, p.h - 20, 32, 14, "UP", { t.text[1], t.text[2], t.text[3], 0.15 }, t.text, 7)
-  button(p.x + 42, p.h - 20, 32, 14, "DN", { t.text[1], t.text[2], t.text[3], 0.15 }, t.text, 7)
-  love.graphics.setColor(t.dim)
-  love.graphics.setFont(font(6))
-  local note = kind == "feed" and (state.feedStatus or "") or kind == "mod" and ("%d mods - X toggles"):format(#rows) or "X changes a setting"
-  love.graphics.printf(note, p.x + 80, p.h - 16, p.w - 86, "left")
+  -- scroll arrows on the right edge
+  if more then
+    button(p.x + p.w - 18, y + 2, 10, 12, "^", UI.card, UI.text, function() state.scroll = math.max(0, state.scroll - vis) end, true)
+    button(p.x + p.w - 18, y + h - 14, 10, 12, "v", UI.card, UI.text, function() state.scroll = math.min(math.max(0, #rows - vis), state.scroll + vis) end, true)
+  end
+end
+
+local function drawModsTab(p)
+  local y = BODY_Y
+  local g = state.opts.game()
+  label("Show:", p.x + 6, y + 2, UI.dim)
+  button(p.x + 48, y, 32, 13, "All", state.modFilter and UI.card or UI.white, state.modFilter and UI.text or UI.dark, function() state.modFilter = false end, state.modFilter)
+  button(p.x + 84, y, 76, 13, clip(g.name:gsub("^Pokemon ", ""), 9), state.modFilter and UI.white or UI.card, state.modFilter and UI.dark or UI.text, function() state.modFilter = true end, not state.modFilter)
+  button(p.x + p.w - 70, y, 64, 13, "Rescan", UI.blue, UI.white, state.opts.rescanMods)
+  local rows = modsForFilter()
+  y = y + 16
+  drawRows(p, y, bodyH(p) - 16, rows, "mod")
+end
+
+local function drawFindTab(p)
+  local y = BODY_Y
+  local rows = feedRows()
+  if #rows == 0 then
+    local h = bodyH(p)
+    card(p.x + 6, y, p.w - 12, h)
+    local net = lovepsp.network and lovepsp.network()
+    label(net and (state.job and "Fetching the index" or "Mod index") or "No network", p.x + 12, y + 4, UI.text, p.w - 24, "center")
+    label(net and (state.feedStatus or "The official mod index lists\nmods you can install from\ntheir authors' releases.")
+      or "Connect to the internet\nto browse the mod index.", p.x + 12, y + 16, UI.dim, p.w - 24, "center")
+    if net and not state.job then
+      button(p.x + math.floor(p.w / 2) - 44, y + h - 18, 88, 14, "Fetch", UI.blue, UI.white, function() state.feed = nil state.feedRows = nil startFind() end)
+    end
+    return
+  end
+  label(clip(state.feedStatus or "", 32), p.x + 6, y, UI.dim, p.w - 12, "center")
+  drawRows(p, y + 12, bodyH(p) - 12, rows, "feed")
+end
+
+local function drawOnlineTab(p)
+  local y = BODY_Y
+  card(p.x + 6, y, p.w - 12, 36)
+  label("Display name", p.x + 12, y + 3, UI.dim)
+  label(state.opts.trainer and state.opts.trainer() or "PLAYER", p.x + 12, y + 14, UI.text)
+  badge(p.x + 12, y + 24, "OFFLINE", UI.bg, UI.dim)
+  button(p.x + p.w - 76, y + 10, 64, 16, "Connect", UI.mute, UI.dark)
+  y = y + 40
+  local cards = { "Play", "Watch", "Trade" }
+  local ch = math.floor((bodyH(p) - 40) / 3)
+  for _, c in ipairs(cards) do
+    card(p.x + 6, y, p.w - 12, ch - 3)
+    label(c, p.x + 12, y + math.floor((ch - 3 - LH) / 2) + 1, UI.mute)
+    label("desktop build only", p.x + 12, y + math.floor((ch - 3 - LH) / 2) + 1, UI.mute, p.w - 24, "right")
+    y = y + ch
+  end
+end
+
+local function drawImportTab(p)
+  local g = state.opts.game()
+  local y = BODY_Y
+  card(p.x + 6, y, p.w - 12, 48)
+  label(clip(g.name, 20), p.x + 12, y + 3, UI.text)
+  badge(p.x + 12 + math.min(#g.name, 20) * CW + 4, y + 3, "ROM", UI.bg, UI.dim)
+  label(g.ready and "Imported" or g.rom and clip("Found: " .. g.rom, 30) or "No ROM found", p.x + 12, y + 14, g.ready and UI.green or g.rom and UI.yellow or { 0.90, 0.35, 0.35 })
+  label("Put the ROM next to the app.", p.x + 12, y + 24, UI.dim)
+  button(p.x + 12, y + 34, 88, 12, g.ready and "Imported" or g.rom and "Import" or "No ROM", g.rom and not g.ready and UI.blue or UI.mute, UI.white, state.opts.primary)
+  y = y + 52
+  card(p.x + 6, y, p.w - 12, bodyH(p) - 52)
+  label("Mods", p.x + 12, y + 3, UI.text)
+  button(p.x + p.w - 60, y + 2, 48, 12, "Scan", UI.card, UI.text, state.opts.rescanMods, true)
+  label("mods/ next to the ROM, or FIND", p.x + 12, y + 15, UI.dim)
+end
+
+local function drawSettings(p)
+  love.graphics.setColor(0, 0, 0, 0.6)
+  love.graphics.rectangle("fill", p.x, 0, p.w, p.h)
+  local x, y, w, h = p.x + 4, 4, p.w - 8, p.h - 8
+  card(x, y, w, h)
+  hit(x, y, w, h, function() end)
+  label("Settings", x + 8, y + 4, UI.text)
+  label("saved automatically", x + 8 + 9 * CW, y + 4, UI.dim)
+  card(x + w - 24, y + 3, 18, 15)
+  icon("close", x + w - 22, y + 3, 14, UI.text)
+  hit(x + w - 26, y + 1, 24, 19, closeSettings)
+  local rows = optionRows()
+  local rh = 25
+  local ry = y + 20
+  for i = state.setScroll + 1, math.min(#rows, state.setScroll + SET_VIS) do
+    local row = rows[i]
+    local sel = i == state.setCursor
+    card(x + 4, ry, w - 8, rh - 2, sel and { 0.14, 0.17, 0.23 } or UI.card)
+    label(clip(row[1], 30), x + 8, ry + 2, sel and UI.text or UI.dim)
+    button(x + 8, ry + 12, 14, 10, "<", UI.card, UI.text, function() state.setCursor = i changeOption(i, -1) end, true)
+    label(clip(row[2](), 24), x + 22, ry + 12, UI.text, w - 44, "center")
+    button(x + w - 22, ry + 12, 14, 10, ">", UI.card, UI.text, function() state.setCursor = i changeOption(i, 1) end, true)
+    ry = ry + rh
+  end
+  local fy = y + h - 17
+  if #rows > SET_VIS then
+    button(x + 4, fy, 20, 13, "^", UI.card, UI.text, function() setMove(-SET_VIS) end, true)
+    button(x + 26, fy, 20, 13, "v", UI.card, UI.text, function() setMove(SET_VIS) end, true)
+  end
+  button(x + 52, fy, 96, 13, "Instructions", UI.card, UI.text, function() state.help = true end, true)
+  button(x + w - 56, fy, 52, 13, "Done", UI.blue, UI.white, closeSettings)
+end
+
+local HELP = {
+  "L / R, or tap: switch tabs",
+  "Stick / D-pad: move",
+  "X (A): play, import, toggle a",
+  "  mod, install from FIND",
+  "O (B): back to GAMES",
+  "START or the gear: settings",
+  "Left / right: change the game",
+  "Y on MODS: all games / this game",
+  "Open the phone flat for one",
+  "  screen; fold it for the DS",
+}
+local function drawHelp(p)
+  love.graphics.setColor(0, 0, 0, 0.7)
+  love.graphics.rectangle("fill", p.x, 0, p.w, p.h)
+  local x, y, w, h = p.x + 4, 4, p.w - 8, p.h - 8
+  card(x, y, w, h)
+  label("Instructions", x + 8, y + 4, UI.text)
+  local ly = y + 18
+  for _, line in ipairs(HELP) do
+    label(line, x + 8, ly, UI.text)
+    ly = ly + LH + 2
+  end
+  button(x + w - 56, y + h - 17, 52, 13, "Done", UI.blue, UI.white, function() state.help = nil end)
+  hit(x, y, w, h, function() end)
 end
 
 local function drawPanel()
   local p = state.panel
   local t = theme()
-  love.graphics.setColor(t.bg[1], t.bg[2], t.bg[3], 1)
+  hits = {}
+  -- the theme tints the background; the panel keeps the Deluxe navy
+  love.graphics.setColor(t.bg[1] * 0.5 + UI.bg[1] * 0.5, t.bg[2] * 0.5 + UI.bg[2] * 0.5, t.bg[3] * 0.5 + UI.bg[3] * 0.5, 1)
   love.graphics.rectangle("fill", p.x, 0, p.w, p.h)
-  drawTabs(p, t)
+  UI.blue = { t.accent[1] * 0.5 + 0.13 * 0.5, t.accent[2] * 0.5 + 0.42 * 0.5, t.accent[3] * 0.5 + 0.75 * 0.5 }
+  drawHeader(p)
+  drawTabs(p)
   local tab = TABS[state.tab]
-  if tab == "GAMES" then drawGamesTab(p, t)
-  elseif tab == "MODS" then drawList(p, t, modRows(), "mod")
-  elseif tab == "FIND" then
-    local rows = feedRows()
-    if #rows == 0 then
-      love.graphics.setColor(t.text)
-      love.graphics.setFont(font(8))
-      love.graphics.printf(state.feedStatus or "", p.x + 10, 60, p.w - 20, "center")
-    else
-      drawList(p, t, rows, "feed")
-    end
-  elseif tab == "ONLINE" then
-    love.graphics.setColor(t.text)
-    love.graphics.setFont(font(9))
-    love.graphics.printf("Online play is not part of this port.\n\nThe engine's Gen1Online / link features need the desktop build.", p.x + 12, 50, p.w - 24, "center")
-  elseif tab == "IMPORT" then
-    local g = state.opts.game()
-    love.graphics.setColor(t.text)
-    love.graphics.setFont(font(9))
-    love.graphics.printf("Put your own US cartridge dump in\n" .. (state.opts.romDir or "the app's files folder") .. "\n(or roms/ under it), any file name.", p.x + 10, 36, p.w - 20, "center")
-    love.graphics.setFont(font(8))
-    love.graphics.setColor(t.dim)
-    love.graphics.printf(g.name .. ": " .. (g.ready and "imported, ready to play" or g.rom and ("ROM found: " .. g.rom) or "no ROM found"), p.x + 10, 90, p.w - 20, "center")
-    button(p.x + 8, p.h - 44, p.w - 16, 18, g.ready and "ALREADY IMPORTED" or g.rom and ("IMPORT " .. g.name:upper()) or "NO ROM TO IMPORT",
-      g.rom and not g.ready and { 0.95, 0.8, 0.2, 1 } or { 0.35, 0.35, 0.4, 1 }, g.rom and not g.ready and { 0, 0, 0, 1 } or nil, 9)
-    button(p.x + 8, p.h - 20, p.w - 16, 14, "RESCAN", { t.text[1], t.text[2], t.text[3], 0.15 }, t.text, 7)
-  end
+  if tab == "GAMES" then drawGamesTab(p)
+  elseif tab == "MODS" then drawModsTab(p)
+  elseif tab == "FIND" then drawFindTab(p)
+  elseif tab == "ONLINE" then drawOnlineTab(p)
+  elseif tab == "IMPORT" then drawImportTab(p) end
+  drawFooter(p)
+  if state.settings then drawSettings(p) end
+  if state.help then drawHelp(p) end
   if state.message then
-    love.graphics.setColor(0, 0, 0, 0.75)
-    love.graphics.rectangle("fill", p.x + 10, p.h / 2 - 10, p.w - 20, 20)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(font(8))
-    love.graphics.printf(state.message, p.x + 12, p.h / 2 - 5, p.w - 24, "center")
+    love.graphics.setColor(0, 0, 0, 0.8)
+    rr("fill", p.x + 10, math.floor(p.h / 2) - 12, p.w - 20, 24)
+    label(clip(state.message, 30), p.x + 12, math.floor(p.h / 2) - 5, UI.white, p.w - 24, "center")
   end
 end
 

@@ -227,7 +227,12 @@ go, import the selected game). L / R switch tabs, X activates, O returns
 to GAMES. The update check reads the latest release of
 https://github.com/nahalewski/gen1recomp-Fold (the port's own repository;
 `VERSION` is the installed version) and, when a newer tag exists, opens
-that release page in the browser.
+that release page in the browser.  The panel follows the G1R Deluxe
+launcher's look: the logo and the swap-game / settings / quit icons on
+top, icon tabs (the GAMES tab shows the selected game's letter), outlined
+cards, and a footer with the BOIS CLUB credit, the update button and the
+release notes.  The gear (or START) opens the settings modal with the
+launcher's option rows as steppers and an Instructions page.
 
 The app is its own package, `com.nahalewski.g1rports` ("G1R Ports"), so
 installing it never touches or updates the official gen1recomp app.

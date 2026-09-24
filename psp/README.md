@@ -41,7 +41,7 @@ as the desktop build.
 | B | Circle |
 | Start | Start |
 | Select | Select |
-| screen scaling | options page, or Select + L in game |
+| screen mode | Select + R (next) / Select + L (previous), anywhere; also on the options page |
 
 The options page persists to `save/pokemon-love2d/psp_options.lua`.
 `save/pokemon-love2d/env.txt` (KEY=VALUE lines) overrides the engine's
@@ -55,8 +55,9 @@ The options page persists to `save/pokemon-love2d/psp_options.lua`.
   without input injection). `autoboot.txt` containing a version name boots
   it directly.
 
-Screen scaling modes: `fit` (default, aspect-correct 3:2 letterbox), `stretch`,
-`integer` (1x, tiny) and `none`.
+Screen modes: **NATIVE** (160x144 at 1x), **FULLSCREEN** (default: fills the
+height, 3:2 aspect with side bars) and **WIDESCREEN** (stretched to the
+full 16:9 panel).
 
 ## What works / what does not
 

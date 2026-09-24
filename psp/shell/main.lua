@@ -12,7 +12,7 @@
 --   Cards:   Left/Right or nub: pick a cartridge   X: play / import
 --            Triangle: options   Square: rescan roms/
 --   Options: Up/Down: row   Left/Right or X: change   Circle: back
---   In game: Select + L cycles screen scaling
+--   Anywhere: Select + R / Select + L cycle NATIVE / FULLSCREEN / WIDESCREEN
 
 local CREDIT = "Based on the Pokemon Gen 1 Recompilation Project by BOIS CLUB "
   .. "GAMES, LLC (https://github.com/bryanthaboi/gen1recomp)"
@@ -118,7 +118,8 @@ end
 
 ---------------------------------------------------------------- options
 
-local SCALING = { "fit", "stretch", "integer", "none" }
+local SCALING = { "none", "fit", "stretch" }
+local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", stretch = "WIDESCREEN (16:9)" }
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
 local Options = { scaling = "fit", smooth = true, swapAB = false, audioRate = "22050" }
 
@@ -135,6 +136,13 @@ local function applyOptions()
   lovepsp.setSwapAB(Options.swapAB)
   lovepsp.env.POKEPORT_AUDIO_RATE = Options.audioRate
   pcall(love.filesystem.write, "lovepsp_scaling.txt", Options.scaling)
+end
+
+-- the runtime's SELECT+R / SELECT+L hotkeys report back here
+lovepsp.onScalingChanged = function(mode, smooth)
+  Options.scaling = mode
+  Options.smooth = smooth
+  saveOptions()
 end
 
 local function loadOptions()
@@ -165,7 +173,7 @@ end
 
 -- rows: label, value(), change(dir)   (dir 0 = X pressed)
 local OPTION_ROWS = {
-  { "Screen scaling", function() return Options.scaling end,
+  { "Screen mode", function() return SCALING_NAMES[Options.scaling] or Options.scaling end,
     function(d) Options.scaling = cycle(SCALING, Options.scaling, d == 0 and 1 or d) end },
   { "Smooth scaling", function() return Options.smooth and "ON" or "OFF" end,
     function() Options.smooth = not Options.smooth end },
@@ -368,7 +376,10 @@ local function drawCards()
   if Shell.ready[v] then hint = "X: play " .. GameVersion.info(v).displayName
   elseif Shell.roms[v] then hint = "X: import " .. Shell.roms[v].name
   else hint = "Put a canonical US " .. GameVersion.info(v).label .. " .gb in roms/ and press Square" end
-  love.graphics.printf(hint, 12, 222, SCREEN_W - 24, "center")
+  love.graphics.printf(hint, 12, 216, SCREEN_W - 24, "center")
+  love.graphics.setColor(0.6, 0.6, 0.65, 1)
+  love.graphics.printf("Select+R / Select+L: screen mode (" .. (SCALING_NAMES[Options.scaling] or Options.scaling) .. ")",
+    12, 230, SCREEN_W - 24, "center")
 end
 
 local function drawOptions()

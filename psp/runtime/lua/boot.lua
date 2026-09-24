@@ -277,35 +277,45 @@ do
   package.loaded["love.touch"] = touch
 end
 
--- scaling hotkey: hold SELECT and press L to cycle the screen scaling
-local SCALE_MODES = { "fit", "stretch", "integer", "none" }
-local function cycleScaling()
+-- scaling hotkeys: hold SELECT and press R to cycle the screen mode forward,
+-- SELECT + L to cycle back.  "none" is the native 160x144 size, "fit" fills
+-- the height keeping the 3:2 aspect (FULLSCREEN), "stretch" fills the whole
+-- 16:9 panel (WIDESCREEN).
+local SCALE_MODES = { "none", "fit", "stretch" }
+local function cycleScaling(dir)
   local cur, smooth = love.graphics._getPresentScaling()
-  local idx = 1
+  local idx = 2
   for i, m in ipairs(SCALE_MODES) do if m == cur then idx = i end end
-  idx = idx % #SCALE_MODES + 1
+  idx = (idx - 1 + dir) % #SCALE_MODES + 1
   love.graphics._setPresentScaling(SCALE_MODES[idx], smooth)
   pcall(love.filesystem.write, "lovepsp_scaling.txt", SCALE_MODES[idx])
+  local hook = love.lovepsp and love.lovepsp.onScalingChanged
+  if hook then pcall(hook, SCALE_MODES[idx], smooth) end
 end
 
 local swapAB = false
 local quitSent = false
 local DEADZONE = 0.3
 
+local rawPrev = 0
 local function pumpInput()
   local buttons, ax, ay, quit = core.poll()
   if quit and not quitSent then
     quitSent = true
     love.event.push("quit", 0)
   end
+  -- SELECT+R / SELECT+L are the runtime's scaling hotkeys, not game input:
+  -- detect them against the raw previous state, then hide the shoulder
+  -- buttons from the game for as long as SELECT is held
+  local rawChanged = buttons ~ rawPrev
+  rawPrev = buttons
+  if buttons & B.select ~= 0 then
+    if rawChanged & B.r ~= 0 and buttons & B.r ~= 0 then cycleScaling(1) end
+    if rawChanged & B.l ~= 0 and buttons & B.l ~= 0 then cycleScaling(-1) end
+    buttons = buttons & ~(B.r | B.l)
+  end
   local changed = buttons ~ padButtons
   if changed ~= 0 then
-    -- SELECT+L is the runtime's scaling hotkey, not a game input
-    if buttons & B.select ~= 0 and changed & B.l ~= 0 and buttons & B.l ~= 0 then
-      cycleScaling()
-      changed = changed & ~B.l
-      buttons = buttons & ~B.l
-    end
     for _, m in ipairs(PAD_MAP) do
       local bit, name = m[1], m[2]
       if swapAB then

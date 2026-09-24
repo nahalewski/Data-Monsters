@@ -19,9 +19,11 @@ UPSTREAM_URL="https://github.com/bryanthaboi/gen1recomp"
 UPSTREAM_REF="${UPSTREAM_REF:-main}"
 UPSTREAM_DIR=""
 HOST_ONLY=0
+BYTECODE=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --host-only) HOST_ONLY=1 ;;
+    --no-bytecode) BYTECODE=0 ;;  # Lua source in the archive (big-endian targets)
     --upstream) UPSTREAM_DIR="$2"; shift ;;
     --ref) UPSTREAM_REF="$2"; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
@@ -102,6 +104,7 @@ EOF
 # chunk name keeps the archive-relative path for the same reason.
 fail=0
 while IFS= read -r -d '' f; do
+  [ "$BYTECODE" = 1 ] || break
   rel="${f#$GAME/}"
   if ! "$LUAC" -g "$f" "$f.tmp" "$rel"; then fail=1; continue; fi
   mv "$f.tmp" "$f"

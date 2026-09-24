@@ -45,13 +45,26 @@ static inline uint8_t lp_f2b(double f) {
 
 /* ------------------------------------------------------------ pixels */
 
-/* Pixels are stored R,G,B,A bytes in memory (== PSP GU_PSM_8888). */
+/* Pixels are stored R,G,B,A bytes in memory (== PSP GU_PSM_8888, stb's
+ * order, SDL_PIXELFORMAT_RGBA32).  The uint32 view of that depends on the
+ * host's byte order, so the accessors do too (the PS3's PPU is big-endian). */
 typedef uint32_t px_t;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define PX_R(p) ((p) >> 24)
+#define PX_G(p) (((p) >> 16) & 0xff)
+#define PX_B(p) (((p) >> 8) & 0xff)
+#define PX_A(p) ((p) & 0xff)
+#define PX(r, g, b, a) (((px_t)(r) << 24) | ((px_t)(g) << 16) | ((px_t)(b) << 8) | (px_t)(a))
+#define PX_AMASK 0x000000ffu
+#else
 #define PX_R(p) ((p) & 0xff)
 #define PX_G(p) (((p) >> 8) & 0xff)
 #define PX_B(p) (((p) >> 16) & 0xff)
 #define PX_A(p) ((p) >> 24)
 #define PX(r, g, b, a) ((px_t)(r) | ((px_t)(g) << 8) | ((px_t)(b) << 16) | ((px_t)(a) << 24))
+#define PX_AMASK 0xff000000u
+#endif
+#define PX_RGBMASK (~PX_AMASK)
 
 /* A texture: backing store for Image and Canvas. */
 typedef struct Tex {

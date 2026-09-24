@@ -137,22 +137,22 @@ static px_t shader_apply(Shader *s, px_t t, const int *c, int white) {
   px_t o;
   switch (s->kind) {
   case K_PAL4:
-    return s->lut[PX_R(t)] | (t & 0xff000000u);
+    return s->lut[PX_R(t)] | (t & PX_AMASK);
   case K_PAL4_KEYED:
     if (PX_R(t) >= 212 && PX_G(t) >= 212 && PX_B(t) >= 212) return s->lut[PX_R(t)];
-    return s->lut[PX_R(t)] | (t & 0xff000000u);
+    return s->lut[PX_R(t)] | (t & PX_AMASK);
   case K_KEY0:
     o = white ? t : modulate(t, c);
-    if (PX_R(o) >= 212 && PX_G(o) >= 212 && PX_B(o) >= 212) o &= 0x00ffffffu;
+    if (PX_R(o) >= 212 && PX_G(o) >= 212 && PX_B(o) >= 212) o &= PX_RGBMASK;
     return o;
   case K_GBC:
-    o = s->lut[PX_R(t)] | (t & 0xff000000u);
+    o = s->lut[PX_R(t)] | (t & PX_AMASK);
     return white ? o : modulate(o, c);
   case K_GBC_KEYED:
-    o = s->lut_key[PX_R(t)] ? s->lut[PX_R(t)] : (s->lut[PX_R(t)] | (t & 0xff000000u));
+    o = s->lut_key[PX_R(t)] ? s->lut[PX_R(t)] : (s->lut[PX_R(t)] | (t & PX_AMASK));
     return white ? o : modulate(o, c);
   case K_REMAP: {
-    uint32_t key = t & 0x00ffffffu;
+    uint32_t key = t & PX_RGBMASK;
     unsigned h = (key * 2654435761u) >> 24;
     if (s->rc_key[h] != key) {
       Uniform *cnt = shader_uniform(s, "remapCount", 0), *tol = shader_uniform(s, "remapTol", 0);
@@ -172,7 +172,7 @@ static px_t shader_apply(Shader *s, px_t t, const int *c, int white) {
       s->rc_key[h] = key;
       s->rc_val[h] = m;
     }
-    o = s->rc_val[h] | (t & 0xff000000u);
+    o = s->rc_val[h] | (t & PX_AMASK);
     return white ? o : modulate(o, c);
   }
   default:

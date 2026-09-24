@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "plat_common.h"
+#include "lp.h"
 
 static void compute_rect(int sw, int sh, int dw, int dh, int mode,
                          int *ox, int *oy, int *ow, int *oh) {
@@ -30,15 +31,15 @@ void plat_blit_scaled(const uint32_t *src, int sw, int sh,
   /* clear borders (black, opaque) */
   for (y = 0; y < dh; y++) {
     uint32_t *row = dst + (long)y * dstride;
-    if (y < oy || y >= oy + oh) { for (x = 0; x < dw; x++) row[x] = 0xff000000u; continue; }
-    for (x = 0; x < ox; x++) row[x] = 0xff000000u;
-    for (x = ox + ow; x < dw; x++) row[x] = 0xff000000u;
+    if (y < oy || y >= oy + oh) { for (x = 0; x < dw; x++) row[x] = PX_AMASK; continue; }
+    for (x = 0; x < ox; x++) row[x] = PX_AMASK;
+    for (x = ox + ow; x < dw; x++) row[x] = PX_AMASK;
   }
   if (ow == sw && oh == sh) {
     for (y = 0; y < sh; y++) {
       const uint32_t *s = src + (long)y * sw;
       uint32_t *d = dst + (long)(oy + y) * dstride + ox;
-      for (x = 0; x < sw; x++) d[x] = s[x] | 0xff000000u;
+      for (x = 0; x < sw; x++) d[x] = s[x] | PX_AMASK;
     }
     return;
   }
@@ -49,7 +50,7 @@ void plat_blit_scaled(const uint32_t *src, int sw, int sh,
     for (y = 0; y < oh; y++) {
       const uint32_t *s = src + (long)((long)y * sh / oh) * sw;
       uint32_t *d = dst + (long)(oy + y) * dstride + ox;
-      for (x = 0; x < n; x++) d[x] = s[xmap[x]] | 0xff000000u;
+      for (x = 0; x < n; x++) d[x] = s[xmap[x]] | PX_AMASK;
     }
     return;
   }
@@ -82,9 +83,9 @@ void plat_blit_scaled(const uint32_t *src, int sw, int sh,
       for (x = 0; x < n; x++) {
         uint32_t p00 = r0[x0m[x]], p01 = r0[x1m[x]], p10 = r1[x0m[x]], p11 = r1[x1m[x]];
         int wx = xw[x];
-        if (!wx && !yw) { d[x] = p00 | 0xff000000u; continue; }
+        if (!wx && !yw) { d[x] = p00 | PX_AMASK; continue; }
         {
-          uint32_t out = 0xff000000u; int c;
+          uint32_t out = PX_AMASK; int c;
           for (c = 0; c < 24; c += 8) {
             int top = (int)((p00 >> c) & 255) * (256 - wx) + (int)((p01 >> c) & 255) * wx;
             int bot = (int)((p10 >> c) & 255) * (256 - wx) + (int)((p11 >> c) & 255) * wx;

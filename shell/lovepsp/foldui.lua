@@ -127,9 +127,17 @@ local function checkUpdate()
     love.filesystem.remove("mods/.release.json")
     local okj, rel = pcall(Json.decode, raw or "")
     if not okj or type(rel) ~= "table" or not rel.tag_name then state.updateStatus = "no release yet" return end
+    -- "0.1", "v0.1.0" and "0.1.0" are the same version
+    local function norm(v)
+      v = tostring(v or ""):gsub("^[vV]", "")
+      local parts = {}
+      for n in v:gmatch("%d+") do parts[#parts + 1] = tostring(tonumber(n)) end
+      while #parts < 3 do parts[#parts + 1] = "0" end
+      return table.concat(parts, ".")
+    end
     local tag = tostring(rel.tag_name):gsub("^v", "")
-    local mine = tostring(state.opts.portVersion or ""):gsub("^v", "")
-    if tag ~= "" and tag ~= mine then
+    local mine = norm(state.opts.portVersion)
+    if tag ~= "" and norm(tag) ~= mine then
       state.update = { tag = tag, url = rel.html_url or RELEASES_PAGE }
       state.updateStatus = "update " .. tag .. " available"
     else

@@ -49,7 +49,7 @@ static SDL_GameController *g_pad;
 static SDL_Joystick *g_joy; /* raw pad when no controller mapping exists (PS3) */
 static SDL_Renderer *g_ren;
 static SDL_Texture *g_tex;
-static uint32_t g_screen[PLAT_SCREEN_W * PLAT_MAX_LH]; /* tall enough for the DS layout with a skin */
+static uint32_t *g_screen; /* PLAT_SCREEN_W x PLAT_MAX_LH, allocated at init: tall enough for a portrait phone (a static array this size upsets vita-elf-create) */
 static int g_lh = PLAT_SCREEN_H; /* current logical height */
 static int g_ds;
 static int g_top = PLAT_SCREEN_H, g_bottom = PLAT_SCREEN_H; /* DS halves */
@@ -209,6 +209,7 @@ int plat_init(int argc, char **argv) {
   else snprintf(g_self, sizeof g_self, "%sEBOOT.PBP", g_base);
 #endif
 
+  if (!g_screen) g_screen = (uint32_t *)calloc((size_t)PLAT_SCREEN_W * PLAT_MAX_LH, sizeof(uint32_t));
   if (SDL_Init((g_headless ? 0 : SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) | SDL_INIT_TIMER) != 0) {
     fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
     return -1;

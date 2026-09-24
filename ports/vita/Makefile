@@ -37,8 +37,11 @@ $(B)/obj/%.o: $(RT)/src/%.c $(B)/boot_lua.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# vita-elf-create needs room after the text segment for its SCE data;
+# LDFLAGS_EXTRA lets a build pad the layout when it complains
+LDFLAGS_EXTRA ?= -Wl,-z,separate-code
 $(B)/lovepsp.elf: $(OBJS)
-	$(CC) -Wl,-q -o $@ $^ $(LIBS)
+	$(CC) -Wl,-q $(LDFLAGS_EXTRA) -o $@ $^ $(LIBS)
 
 $(B)/eboot.bin: $(B)/lovepsp.elf
 	$(VITASDK)/bin/vita-elf-create $< $(B)/lovepsp.velf

@@ -95,15 +95,17 @@ state = {
   panelY = 0, panelH = PANEL_H, -- panel area inside the bottom half
 }
 
+local ANDROID = love._os == "Android"
 local HELP = {
-  "CONTROLLER (Vita, Razer Kishi, any pad)",
+  ANDROID and "CONTROLLER (any Bluetooth or USB pad)" or "CONTROLLER (Vita, Razer Kishi, any pad)",
   "START: open/close the MENU panel.",
   "SELECT: open/close this MODS panel.",
   "Right stick: move in MENU. R1 select, R2 back.",
   "Left stick: move in MODS. L1 select, L2 back.",
-  "D-pad, X, O: the game keeps playing.",
+  ANDROID and "D-pad, A, B: the game keeps playing." or "D-pad, X, O: the game keeps playing.",
   "Select+R / Select+L: screen mode.",
-  "TOUCH: tap a row; tap X to close; tap the MODS / MENU buttons after touching the game.",
+  ANDROID and "TOUCH: tap a row; tap the x to close; the HOME button opens the MENU."
+    or "TOUCH: tap a row; tap X to close; tap the MODS / MENU buttons after touching the game.",
 }
 
 -- 3DS skin (shell/assets/skin3ds, the player's art): frames drawn around

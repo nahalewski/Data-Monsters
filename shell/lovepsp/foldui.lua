@@ -473,7 +473,7 @@ local function drawGamesTab(p)
   button(p.x + 124, y, 14, 13, ">", UI.card, UI.text, function() state.opts.moveGame(1) end, true)
   button(p.x + p.w - 70, y, 64, 13, "Rescan", UI.card, UI.text, state.opts.rescan, true)
   y = y + 17
-  label(g.ready and "Tap the cart or press X to play." or g.rom and "Tap Import to build the game." or "Put the ROM next to the app.", p.x + 6, y + 2, UI.dim, p.w - 12, "center")
+  label(g.ready and "Tap the cart or press A to play." or g.rom and "Tap Import to build the game." or "Put the ROM next to the app.", p.x + 6, y + 2, UI.dim, p.w - 12, "center")
 end
 
 modsForFilter = function()
@@ -635,9 +635,9 @@ end
 local HELP = {
   "L / R, or tap: switch tabs",
   "Stick / D-pad: move",
-  "X (A): play, import, toggle a",
+  "A: play, import, toggle a",
   "  mod, install from FIND",
-  "O (B): back to GAMES",
+  "B: back to GAMES",
   "START or the gear: settings",
   "Left / right: change the game",
   "Y on MODS: all games / this game",

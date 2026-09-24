@@ -21,7 +21,16 @@
 
 local CREDIT = "Based on the Pokemon Gen 1 Recompilation Project by BOIS CLUB "
   .. "GAMES, LLC (https://github.com/bryanthaboi/gen1recomp)"
-local TITLE = "GEN 1 RECOMP - PSP"
+-- platform words: the PSP names its buttons and its EBOOT; Android and the
+-- Vita do not
+local PLATFORM = love._os == "Android" and "ANDROID" or love._os == "Vita" and "VITA" or love._os == "PS3" and "PS3" or "PSP"
+local TITLE = love._os == "Android" and "G1R PORTS" or ("GEN 1 RECOMP - " .. PLATFORM)
+local IS_PSP = love._os == "PSP"
+local ROM_HOME = love._os == "Android" and "the app's files folder" or love._os == "Vita" and "the app's data folder" or "the EBOOT"
+-- button names in hints: the PSP's shapes, everyone else's letters
+local BTN = IS_PSP and { a = "X", b = "Circle", x = "Square", y = "Triangle" }
+  or love._os == "Vita" and { a = "X", b = "O", x = "Square", y = "Triangle" }
+  or { a = "A", b = "B", x = "X", y = "Y" }
 local PORTED_BY = "Ported by nahalewski"
 -- card artwork supplied with the port (assets/cards/<size>/): <game>_n
 -- (normal), <game>_s (selected, glowing), ready / norom badges, empty cards
@@ -388,18 +397,18 @@ local OPTION_ROWS = {
   { "Mods", function()
       local n = 0
       for _, m in ipairs(Mods.list) do if m.enabled then n = n + 1 end end
-      return ("%d of %d enabled (press X)"):format(n, #Mods.list)
+      return ("%d of %d enabled (press " .. BTN.a .. ")"):format(n, #Mods.list)
     end,
     function(d) if d == 0 then scanMods() Shell.page = "mods" end end },
   { "Delete import", function()
       local v = GAMES[Shell.cursor]
-      return Shell.ready[v] and GameVersion.info(v).displayName .. " (press X)" or "nothing for this card"
+      return Shell.ready[v] and GameVersion.info(v).displayName .. " (press " .. BTN.a .. ")" or "nothing for this card"
     end,
     function(d)
       local v = GAMES[Shell.cursor]
       if d == 0 and Shell.ready[v] then
         deleteCache(v)
-        showMessage(GameVersion.info(v).displayName .. " data deleted. Saves were kept.\n\nPress X to go back.", "options")
+        showMessage(GameVersion.info(v).displayName .. " data deleted. Saves were kept.\n\nPress " .. BTN.a .. " to go back.", "options")
       end
     end },
 }
@@ -524,7 +533,7 @@ local function toggleMod(entry)
 end
 
 local function drawMods()
-  drawChrome("X toggle   Circle back")
+  drawChrome(BTN.a .. " toggle   " .. BTN.b .. " back")
   love.graphics.setFont(font(12))
   if #Mods.list == 0 then
     love.graphics.setColor(0.8, 0.8, 0.85, 1)
@@ -628,7 +637,7 @@ local function stepImport()
       if Shell.ready[job.version] then pcall(precompileCache, job.version) end
       local secs = math.floor(love.timer.getTime() - job.started)
       log(("import: %s finished in %ds"):format(job.version, secs))
-      showMessage(("%s is ready (imported in %dm %02ds).\n\nPress X to continue.")
+      showMessage(("%s is ready (imported in %dm %02ds).\n\nPress " .. BTN.a .. " to continue.")
         :format(GameVersion.info(job.version).displayName, secs // 60, secs % 60))
       return
     end
@@ -1048,7 +1057,7 @@ local function cardRect(i)
 end
 
 local function drawCards()
-  drawChrome("Triangle options  Square rescan")
+  drawChrome(BTN.y .. " options  " .. BTN.x .. " rescan")
   Shell.blink = Shell.blink + love.timer.getDelta()
   for i, v in ipairs(GAMES) do
     local x, y, w, h = cardRect(i)
@@ -1059,14 +1068,14 @@ local function drawCards()
   love.graphics.setFont(font(12))
   love.graphics.setColor(0.9, 0.9, 0.95, 1)
   local hint
-  if Shell.ready[v] then hint = "X: play " .. info.displayName
-  elseif Shell.roms[v] then hint = "X: import " .. Shell.roms[v].name
-  else hint = "No ROM: put your US " .. info.displayName .. " dump next to the EBOOT" end
+  if Shell.ready[v] then hint = BTN.a .. ": play " .. info.displayName
+  elseif Shell.roms[v] then hint = BTN.a .. ": import " .. Shell.roms[v].name
+  else hint = "No ROM: put your US " .. info.displayName .. " dump in " .. ROM_HOME end
   love.graphics.printf(hint, 10, 208, SCREEN_W - 20, "center")
   love.graphics.setColor(0.62, 0.62, 0.68, 1)
   local foot
   if GameVersion.generation(v) ~= 1 then
-    foot = "Gen " .. GameVersion.generation(v) .. " is experimental on PSP and may run out of memory"
+    foot = IS_PSP and ("Gen " .. GameVersion.generation(v) .. " is experimental on PSP and may run out of memory") or ("Gen " .. GameVersion.generation(v) .. " is experimental")
   elseif #Shell.unknown > 0 then
     foot = "Not supported: " .. table.concat(Shell.unknown, ", ")
   else
@@ -1076,7 +1085,7 @@ local function drawCards()
 end
 
 local function drawOptions()
-  drawChrome("Circle: back")
+  drawChrome(BTN.b .. ": back")
   love.graphics.setFont(font(12))
   local y = OPTIONS_TOP
   for i, row in ipairs(OPTION_ROWS) do
@@ -1114,7 +1123,7 @@ local function drawImport()
   local elapsed = math.floor(love.timer.getTime() - job.started)
   love.graphics.print(("%d%%   %dm %02ds elapsed"):format(math.floor((job.progress or 0) * 100),
     elapsed // 60, elapsed % 60), 16, 126)
-  love.graphics.print("The first import takes a few minutes on PSP. Keep the system awake.", 16, 144)
+  love.graphics.print(IS_PSP and "The first import takes a few minutes on PSP. Keep the system awake." or "The first import takes a minute or two. Keep the screen on.", 16, 144)
 end
 
 local function drawMessage()
@@ -1410,9 +1419,9 @@ local function cardsPress(button)
       local accepted = {}
       for _, rev in ipairs(GameVersion.revisions(v)) do accepted[#accepted + 1] = rev.sha1 end
       showMessage("No ROM for " .. GameVersion.info(v).displayName .. " was found.\n\n"
-        .. "Copy your own canonical US cartridge dump next to the EBOOT or into roms/\n"
+        .. "Copy your own canonical US cartridge dump into " .. ROM_HOME .. " or its roms/ folder\n"
         .. "(" .. core.baseDir() .. ")\n\n"
-        .. "Accepted SHA-1: " .. table.concat(accepted, ", ") .. "\n\nPress X to go back.")
+        .. "Accepted SHA-1: " .. table.concat(accepted, ", ") .. "\n\nPress " .. BTN.a .. " to go back.")
     end
   elseif button == "y" then
     Shell.page = "options"

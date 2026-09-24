@@ -850,6 +850,12 @@ local function bootGame(version)
         applyOptions = function() applyOptions() saveOptions() end,
         options = function() return OPTION_ROWS end,
         page = function() return Shell.page end,
+        message = function() return Shell.message end,
+        importJob = function()
+          local job = Shell.import
+          if not job then return nil end
+          return { name = GameVersion.info(job.version).displayName, stage = job.stage, progress = job.progress }
+        end,
         trainer = function() return "PLAYER" end,
         mods = function() scanMods() return Mods.list end,
         toggleMod = toggleMod,
@@ -1266,6 +1272,12 @@ function love.load()
         applyOptions = function() applyOptions() saveOptions() end,
         options = function() return OPTION_ROWS end,
         page = function() return Shell.page end,
+        message = function() return Shell.message end,
+        importJob = function()
+          local job = Shell.import
+          if not job then return nil end
+          return { name = GameVersion.info(job.version).displayName, stage = job.stage, progress = job.progress }
+        end,
         trainer = function() return "PLAYER" end,
         versionLabel = okB and type(info) == "table" and ("v" .. tostring(info.port or "?") .. " / gen1recomp " .. tostring(info.upstream or ""):sub(1, 9)) or "",
         portVersion = okB and type(info) == "table" and info.port or "",
@@ -1360,14 +1372,17 @@ function love.update(dt)
   foldCheck()
   -- on the fold launcher a tap anywhere closes a message (the panel's taps
   -- never reach the launcher's own tap handler there)
-  if Shell.page == "message" and foldActive() and lovepsp.touches then
+  -- a fresh press only: the finger that opened the message must lift first
+  local touchDown = false
+  if lovepsp.touches then
     local ok, t = pcall(lovepsp.touches)
-    local down = ok and t and t[1] and true or false
-    if down and not Shell.msgTouch then
-      Shell.page = Shell.messageBack
-      if FoldUI and FoldUI.swallowTouch then FoldUI.swallowTouch() end
-    end
-    Shell.msgTouch = down
+    touchDown = ok and t and t[1] and true or false
+  end
+  local freshPress = touchDown and not Shell.touchPrev
+  Shell.touchPrev = touchDown
+  if Shell.page == "message" and foldActive() and freshPress then
+    Shell.page = Shell.messageBack
+    if FoldUI and FoldUI.swallowTouch then FoldUI.swallowTouch() end
   end
   if Shell.page == "lid" then
     if lovepsp.touches then

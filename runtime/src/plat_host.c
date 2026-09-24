@@ -210,6 +210,7 @@ int plat_init(int argc, char **argv) {
 #endif
 
   if (!g_screen) g_screen = (uint32_t *)calloc((size_t)PLAT_SCREEN_W * PLAT_MAX_LH, sizeof(uint32_t));
+  SDL_SetHint("SDL_TOUCH_MOUSE_EVENTS", "0");   /* fingers are fingers, not mice */
   if (SDL_Init((g_headless ? 0 : SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) | SDL_INIT_TIMER) != 0) {
     fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
     return -1;
@@ -494,18 +495,15 @@ void plat_poll(PlatInput *in) {
                    || (e.type == SDL_MOUSEMOTION && (e.motion.state & SDL_BUTTON_LMASK));
         int mx = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
         int my = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
-        float lx, ly;
+        Uint32 which = e.type == SDL_MOUSEMOTION ? e.motion.which : e.button.which;
+        /* a finger already came in as a finger event: SDL's synthetic mouse
+         * copy of it would add a phantom touch (Android reports both) */
+        if (which == SDL_TOUCH_MOUSEID) continue;
         if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button != SDL_BUTTON_LEFT) continue;
         if (e.type == SDL_MOUSEBUTTONUP && e.button.button != SDL_BUTTON_LEFT) continue;
         if (e.type == SDL_MOUSEMOTION && !down) continue;
-        {
-          /* window -> logical (SDL_RenderWindowToLogical needs 2.0.18; the PS3's SDL2 is older) */
-          int ww = PLAT_SCREEN_W, wh = PLAT_SCREEN_H;
-          SDL_GetWindowSize(g_win, &ww, &wh);
-          lx = (float)mx * PLAT_SCREEN_W / (ww > 0 ? ww : 1);
-          ly = (float)my * (g_ds == 2 ? g_top : g_lh) / (wh > 0 ? wh : 1);
-        }
-        touch_finger(-1, down, lx, ly);
+        /* with a logical size set, SDL hands mouse events in logical coordinates */
+        touch_finger(-1, down, (float)mx, (float)my);
       }
     }
     k = SDL_GetKeyboardState(NULL);

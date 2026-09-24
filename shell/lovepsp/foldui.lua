@@ -689,6 +689,7 @@ local function drawPanel()
   end
 end
 
+local drawTopPage
 local function drawCart()
   local t = theme()
   local ox, sc, y0, img, top = V.placeTop(state.opts.skin(), state.base)
@@ -722,6 +723,37 @@ local function drawCart()
   love.graphics.printf("Based on gen1recomp by BOIS CLUB GAMES, LLC\ngithub.com/bryanthaboi/gen1recomp", x, y + h - 20, w, "center")
 end
 
+-- the message page (ROM missing, import done, data deleted) and the
+-- import progress, on the top screen
+drawTopPage = function(page)
+  local ox, sc, y0, img, top = V.placeTop(state.opts.skin(), state.base)
+  if not img then return end
+  local c = top.cut
+  local x, y, w, h = ox + c[1] * sc, y0 + c[2] * sc, c[3] * sc, c[4] * sc
+  love.graphics.setColor(UI.bg[1], UI.bg[2], UI.bg[3], 1)
+  love.graphics.rectangle("fill", x, y, w, h)
+  card(x + 8, y + 8, w - 16, h - 16)
+  if page == "import" then
+    local job = state.opts.importJob and state.opts.importJob() or {}
+    label("Importing " .. tostring(job.name or ""), x + 16, y + 14, UI.text)
+    label(clip(tostring(job.stage or ""), 60), x + 16, y + 28, UI.dim, w - 32, "left")
+    local pw = w - 32
+    love.graphics.setColor(UI.card)
+    rr("fill", x + 16, y + 48, pw, 8)
+    love.graphics.setColor(UI.blue)
+    rr("fill", x + 16, y + 48, pw * math.max(0, math.min(1, job.progress or 0)), 8)
+    label(("%d%%"):format(math.floor((job.progress or 0) * 100)), x + 16, y + 60, UI.text)
+    label("The first import takes a minute or two.\nKeep the screen on.", x + 16, y + 74, UI.dim, w - 32, "left")
+  else
+    -- clipped to the card (the scissor is in canvas pixels: scale by the overlay's scale)
+    local k = V.hudScale()
+    love.graphics.setScissor((x + 8) * k, (y + 8) * k, (w - 16) * k, (h - 40) * k)
+    label(tostring(state.opts.message and state.opts.message() or ""):gsub("\n\n", "\n"), x + 16, y + 12, UI.text, w - 32, "left")
+    love.graphics.setScissor()
+    label("Tap anywhere or press A / B to close", x + 16, y + h - 26, UI.dim, w - 32, "center")
+  end
+end
+
 local function render()
   local sw, sh = lovepsp.screen()
   local k = V.hudScale()
@@ -734,9 +766,11 @@ local function render()
   local skin = state.opts.skin()
   local ox, sc, y0, img, top = V.placeTop(skin, state.base)
   if img then V.drawSkin(top.file, ox, y0, sc) end
-  -- the top screen: the cart (the launcher's own window shows through for
-  -- its message pages)
-  if not state.opts.page or state.opts.page() == "cards" then drawCart() end
+  -- the top screen: the cart, or the launcher's message / import page
+  -- drawn here where it is readable (its own window is tiny)
+  local page = state.opts.page and state.opts.page() or "cards"
+  if page == "cards" then drawCart()
+  elseif page == "message" or page == "import" then drawTopPage(page) end
   ox, sc, y0, img = V.placeBottom()
   if img then
     V.drawSkin(V.SKIN_BOTTOM.file, ox, state.base + y0, sc)

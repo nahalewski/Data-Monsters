@@ -308,8 +308,12 @@ local function loadInputScript()
   local names = { up = B.up, down = B.down, left = B.left, right = B.right, cross = B.cross,
     circle = B.circle, square = B.square, triangle = B.triangle, l = B.l, r = B.r,
     start = B.start, select = B.select }
-  for f, name, n in spec:gmatch("(%d+):(%a+):(%d+)") do
-    if names[name] then scriptHolds[#scriptHolds + 1] = { from = tonumber(f), len = tonumber(n), bit = names[name] } end
+  -- "600:cross:3" = frames; "12.5s:cross:0.2s" = seconds of runtime time
+  for f, fu, name, n, nu in spec:gmatch("([%d%.]+)(s?):(%a+):([%d%.]+)(s?)") do
+    if names[name] then
+      scriptHolds[#scriptHolds + 1] = { from = tonumber(f), len = tonumber(n),
+        bit = names[name], seconds = fu == "s" or nu == "s" }
+    end
   end
 end
 
@@ -318,8 +322,10 @@ local function pumpInput()
   local buttons, ax, ay, quit = core.poll()
   if scriptHolds then
     scriptFrame = scriptFrame + 1
+    local now = love.timer.getTime()
     for _, h in ipairs(scriptHolds) do
-      if scriptFrame >= h.from and scriptFrame < h.from + h.len then buttons = buttons | h.bit end
+      local pos = h.seconds and now or scriptFrame
+      if pos >= h.from and pos < h.from + h.len then buttons = buttons | h.bit end
     end
   end
   if quit and not quitSent then

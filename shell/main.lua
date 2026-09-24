@@ -840,6 +840,7 @@ local function bootGame(version)
         optionRows = rows,
         applyOptions = function() applyOptions() saveOptions() end,
         options = function() return OPTION_ROWS end,
+        page = function() return Shell.page end,
         trainer = function() return "PLAYER" end,
         mods = function() scanMods() return Mods.list end,
         toggleMod = toggleMod,
@@ -1141,22 +1142,30 @@ local function drawLid()
   -- overlay layer (screen-sized), not the launcher's 480x272 window
   local sw, sh = SCREEN_W, SCREEN_H
   if lovepsp.screen then local ok, w, h = pcall(lovepsp.screen) if ok and w then sw, sh = w, h end end
+  local okV, V = pcall(require, "lovepsp.vitaui")
+  local k = okV and V.hudScale and V.hudScale() or 1
   if lovepsp.setOverlay then
-    if not lidCanvas or lidCanvas:getWidth() ~= sw or lidCanvas:getHeight() ~= sh then
-      lidCanvas = love.graphics.newCanvas(sw, sh)
+    if not lidCanvas or lidCanvas:getWidth() ~= sw * k or lidCanvas:getHeight() ~= sh * k then
+      lidCanvas = love.graphics.newCanvas(sw * k, sh * k)
     end
     love.graphics.push("all")
     love.graphics.setCanvas(lidCanvas)
     love.graphics.clear(0.02, 0.02, 0.03, 1)
+    if okV and V.hdBegin then V.hdBegin(k) end
   end
   -- full width; a taller screen gets the shell's grey above and below
   local iw, ih = lidImage:getDimensions()
   local s = sw / iw
   love.graphics.setColor(0.16, 0.16, 0.17, 1)
   love.graphics.rectangle("fill", 0, 0, sw, sh)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(lidImage, 0, math.floor((sh - ih * s) / 2), 0, s, s)
+  if okV and V.drawSkin then
+    V.drawSkin("lid.png", 0, math.floor((sh - ih * s) / 2), s)
+  else
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(lidImage, 0, math.floor((sh - ih * s) / 2), 0, s, s)
+  end
   if lovepsp.setOverlay then
+    if okV and V.hdEnd then V.hdEnd() end
     love.graphics.setCanvas()
     love.graphics.pop()
     lovepsp.setOverlay(lidCanvas)
@@ -1184,7 +1193,7 @@ local function foldCheck()
   -- the lid is a landscape picture: only on a landscape screen
   if folded and lovepsp.screen then
     local ok, sw, sh = pcall(lovepsp.screen)
-    if ok and sw and sh and sh > sw then folded = false end
+    if ok and sw and sh and sh > sw * 1.1 then folded = false end
   end
   if folded then
     if not Shell.lidSnooze then lidShow() end
@@ -1226,6 +1235,7 @@ function love.load()
         token = readGithubToken,
         applyOptions = function() applyOptions() saveOptions() end,
         options = function() return OPTION_ROWS end,
+        page = function() return Shell.page end,
         trainer = function() return "PLAYER" end,
         versionLabel = okB and type(info) == "table" and ("v" .. tostring(info.port or "?") .. " / gen1recomp " .. tostring(info.upstream or ""):sub(1, 9)) or "",
         portVersion = okB and type(info) == "table" and info.port or "",

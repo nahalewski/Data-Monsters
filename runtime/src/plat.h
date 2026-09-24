@@ -73,6 +73,9 @@ int plat_open_url(const char *url);
 float plat_hinge(void);
 int plat_get_layout(void);
 void plat_screen_size(int *w, int *h);
+/* physical pixels of the window / display (0,0 when unknown): the shell
+ * draws its overlay sharper than the logical frame on big screens */
+void plat_output_size(int *w, int *h);
 int plat_bottom_half(uint32_t *out, int w, int h); /* dual mode: 0xAARRGGBB rows of the bottom half */
 /* network (net.c) */
 int plat_has_network(void);

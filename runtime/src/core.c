@@ -396,6 +396,13 @@ static int c_screen(lua_State *L) {
   lua_pushinteger(L, h);
   return 2;
 }
+static int c_display(lua_State *L) {
+  int w, h;
+  plat_output_size(&w, &h);
+  lua_pushinteger(L, w);
+  lua_pushinteger(L, h);
+  return 2;
+}
 
 void fs_save_real(const char *rel, char *out, size_t n);
 int lp_unzip(const char *zip_path, const char *dest, char *err, size_t errn);
@@ -452,7 +459,7 @@ static const luaL_Reg core_funcs[] = {
   {"time", c_time}, {"sleep", c_sleep}, {"poll", c_poll}, {"setMode", c_setMode},
   {"getMode", c_getMode}, {"present", c_present}, {"os", c_os}, {"baseDir", c_baseDir},
   {"saveDir", c_saveDir}, {"power", c_power}, {"memory", c_memory}, {"log", c_log},
-  {"screen", c_screen}, {"touch", c_touch}, {"touchPad", c_touchPad}, {"touches", c_touches}, {"inject", c_inject}, {"gameRect", c_gameRect}, {"split", c_split}, {"hinge", c_hinge}, {"openUrl", c_openUrl}, {"http_get", c_http_get}, {"unzip", c_unzip},
+  {"screen", c_screen}, {"display", c_display}, {"touch", c_touch}, {"touchPad", c_touchPad}, {"touches", c_touches}, {"inject", c_inject}, {"gameRect", c_gameRect}, {"split", c_split}, {"hinge", c_hinge}, {"openUrl", c_openUrl}, {"http_get", c_http_get}, {"unzip", c_unzip},
   {"rename", c_rename}, {"network", c_network}, {"layout", c_layout}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
 
 int luaopen_lovepsp(lua_State *L) {

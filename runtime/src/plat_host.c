@@ -71,6 +71,8 @@ static Hold g_holds[256];
 static int g_nholds;
 static long g_pad_frame, g_touch_frame; /* last frame each source was used, for the overlay */
 static const uint32_t *g_hud; static int g_hud_w, g_hud_h; /* shell HUD layer (sidebars) */
+static int g_hud_k = 1;               /* the HUD's scale over the logical frame (1..4) */
+static SDL_Texture *g_hudtex; static int g_hudtex_w, g_hudtex_h;
 static uint32_t g_inject; /* buttons held by a shell-drawn skin */
 
 static uint32_t btn_from_name(const char *n) {
@@ -337,17 +339,36 @@ static void audio_restart(void) {
   if (g_adev) SDL_PauseAudioDevice(g_adev, 0);
 }
 int plat_touch_get(int i, float *x, float *y) { return touch_get(i, x, y); }
-void plat_set_overlay(const uint32_t *px, int w, int h) { g_hud = px; g_hud_w = w; g_hud_h = h; }
+/* the overlay is the logical frame's size, or an integer multiple of it
+ * (drawn sharper and blended over the frame by the GPU) */
+void plat_set_overlay(const uint32_t *px, int w, int h) {
+  int k;
+  g_hud = px; g_hud_w = w; g_hud_h = h; g_hud_k = 1;
+  if (!px) return;
+  for (k = 1; k <= 4; k++)
+    if (w == PLAT_SCREEN_W * k && h == g_lh * k) { g_hud_k = k; return; }
+  g_hud = NULL;
+}
+void plat_output_size(int *w, int *h) {
+  const char *env = getenv("LOVEPSP_DISPLAY");
+  *w = 0; *h = 0;
+  if (g_ren) { SDL_GetRendererOutputSize(g_ren, w, h); return; }
+  if (env && sscanf(env, "%dx%d", w, h) == 2) return;
+  *w = 0; *h = 0;
+}
 void plat_set_bars(int left, int right) { plat_layout_set_bars(left, right); }
 
+/* software blend of the HUD into the frame: the 1x HUD, or (headless) a
+ * scaled HUD sampled down so screenshots still show it */
 static void composite_hud(void) {
-  int x, y;
-  if (!g_hud || g_hud_w != PLAT_SCREEN_W || g_hud_h != g_lh) return;
+  int x, y, k = g_hud_k;
+  if (!g_hud) return;
+  if (k > 1 && !g_headless) return;   /* the GPU blends it in plat_present */
   for (y = 0; y < g_lh; y++) {
-    const uint32_t *s = g_hud + (long)y * PLAT_SCREEN_W;
+    const uint32_t *s = g_hud + (long)y * k * g_hud_w;
     uint32_t *d = g_screen + (long)y * PLAT_SCREEN_W;
     for (x = 0; x < PLAT_SCREEN_W; x++) {
-      uint32_t sp = s[x];
+      uint32_t sp = s[x * k];
       int a = PX_A(sp);
       if (a == 0) continue;
       if (a == 255) { d[x] = sp | PX_AMASK; continue; }
@@ -396,6 +417,23 @@ void plat_present(const uint32_t *px, int w, int h, int mode, int smooth) {
   SDL_UpdateTexture(g_tex, NULL, g_screen, PLAT_SCREEN_W * 4);
   SDL_RenderClear(g_ren);
   SDL_RenderCopy(g_ren, g_tex, NULL, NULL);
+  if (g_hud && g_hud_k > 1) {
+    if (!g_hudtex || g_hudtex_w != g_hud_w || g_hudtex_h != g_hud_h) {
+      if (g_hudtex) SDL_DestroyTexture(g_hudtex);
+      g_hudtex = SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, g_hud_w, g_hud_h);
+      g_hudtex_w = g_hud_w; g_hudtex_h = g_hud_h;
+      if (g_hudtex) {
+        SDL_SetTextureBlendMode(g_hudtex, SDL_BLENDMODE_BLEND);
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+        SDL_SetTextureScaleMode(g_hudtex, SDL_ScaleModeLinear);
+#endif
+      }
+    }
+    if (g_hudtex) {
+      SDL_UpdateTexture(g_hudtex, NULL, g_hud, g_hud_w * 4);
+      SDL_RenderCopy(g_ren, g_hudtex, NULL, NULL);
+    }
+  }
   SDL_RenderPresent(g_ren);
 }
 

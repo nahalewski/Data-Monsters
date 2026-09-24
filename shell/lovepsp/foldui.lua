@@ -27,7 +27,7 @@ local state = {
   modFilter = false, settings = nil, help = nil, setCursor = 1, setScroll = 0,
 }
 
-local function font(size) return state.opts.font(size) end
+local function font(size) V.curFontSize = size return state.opts.font(size) end
 local function theme() return V.themeFor(state.opts.theme(), state.opts.version()) end
 
 ---------------------------------------------------------------- data
@@ -685,44 +685,68 @@ local function drawPanel()
   end
 end
 
+local function drawCart()
+  local t = theme()
+  local ox, sc, y0, img, top = V.placeTop(state.opts.skin(), state.base)
+  if not img then return end
+  local c = top.cut
+  local x, y, w, h = ox + c[1] * sc, y0 + c[2] * sc, c[3] * sc, c[4] * sc
+  love.graphics.setColor(0.03, 0.03, 0.04, 1)
+  love.graphics.rectangle("fill", x, y, w, h)
+  local g = state.opts.game()
+  local cimg = cart(g.version)
+  if cimg then
+    local iw, ih = cimg:getDimensions()
+    local s = math.min(w / iw, h / ih)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(cimg, x + (w - iw * s) / 2, y + (h - ih * s) / 2, 0, s, s)
+  else
+    love.graphics.setColor(t.accent)
+    love.graphics.rectangle("fill", x + w * 0.35, y + h * 0.15, w * 0.3, h * 0.7)
+    love.graphics.setColor(t.title)
+    love.graphics.setFont(font(14))
+    love.graphics.printf(g.name, x + w * 0.35, y + h * 0.45, w * 0.3, "center")
+  end
+  love.graphics.setColor(1, 1, 1, 0.85)
+  love.graphics.setFont(font(20))
+  love.graphics.print("<", x + 6, y + h / 2 - 10)
+  love.graphics.print(">", x + w - 16, y + h / 2 - 10)
+  love.graphics.setColor(0, 0, 0, 0.55)
+  love.graphics.rectangle("fill", x, y + h - 22, w, 22)
+  love.graphics.setColor(0.85, 0.85, 0.9, 1)
+  love.graphics.setFont(font(6))
+  love.graphics.printf("Based on the Pokemon Gen 1 Recompilation Project\nby BOIS CLUB GAMES, LLC - github.com/bryanthaboi/gen1recomp", x, y + h - 20, w, "center")
+end
+
 local function render()
   local sw, sh = lovepsp.screen()
-  if not state.hud or state.hudW ~= sw or state.hudH ~= sh then
-    state.hud = love.graphics.newCanvas(sw, sh)
-    state.hudW, state.hudH = sw, sh
-  end
+  local k = V.hudScale()
+  V.hdCanvas(state, sw, sh, k)
   love.graphics.push("all")
   love.graphics.setCanvas(state.hud)
   love.graphics.clear(0, 0, 0, 0)
   love.graphics.setBlendMode("alpha")
+  V.hdBegin(k)
   local skin = state.opts.skin()
-  local top = V.SKIN_TOP[skin]
-  local img = top and V.skinImage(top.file)
+  local ox, sc, y0, img, top = V.placeTop(skin, state.base)
+  if img then V.drawSkin(top.file, ox, y0, sc) end
+  -- the top screen: the cart (the launcher's own window shows through for
+  -- its message pages)
+  if not state.opts.page or state.opts.page() == "cards" then drawCart() end
+  ox, sc, y0, img = V.placeBottom()
   if img then
-    local ox, sc = V.framePlacement(img)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, ox, 0, 0, sc, sc)
-  end
-  img = V.skinImage(V.SKIN_BOTTOM.file)
-  if img then
-    local ox, sc = V.framePlacement(img)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, ox, state.base, 0, sc, sc)
+    V.drawSkin(V.SKIN_BOTTOM.file, ox, state.base + y0, sc)
     -- the shell's button sprites (unpressed)
-    local sheet = V.skinImage(V.SKIN_BOTTOM.sheet)
-    if sheet then
-      local shw, shh = sheet:getDimensions()
-      for _, b in ipairs(V.SKIN_BOTTOM.buttons) do
-        b.quad = b.quad or love.graphics.newQuad(b.sprite[1], b.sprite[2], b.sprite[3], b.sprite[4], shw, shh)
-        local target = b.r * 2 * sc
-        local qw, qh = b.sprite[3], b.sprite[4]
-        local scale = (b.wide and (target * 2 / qw)) or (target / math.max(qw, qh))
-        love.graphics.draw(sheet, b.quad, ox + b.x * sc - qw * scale / 2, state.base + b.y * sc - qh * scale / 2, 0, scale, scale)
-      end
+    for _, b in ipairs(V.SKIN_BOTTOM.buttons) do
+      local target = b.r * 2 * sc
+      local qw, qh = b.sprite[3], b.sprite[4]
+      local scale = (b.wide and (target * 2 / qw)) or (target / math.max(qw, qh))
+      V.drawSprite(ox + b.x * sc - qw * scale / 2, state.base + y0 + b.y * sc - qh * scale / 2, b.sprite, scale)
     end
   end
   love.graphics.translate(0, state.base + state.panel.y)
   drawPanel()
+  V.hdEnd()
   love.graphics.setCanvas()
   love.graphics.pop()
   lovepsp.setOverlay(state.hud)
@@ -735,58 +759,37 @@ function M.attach(opts)
   state.tab, state.cursor, state.scroll = 1, 1, 0
 end
 
--- the top screen: the selected game's cartridge on a themed glow
+-- the launcher's window sits behind the overlay's cart: black
 function M.drawTop()
-  local t = theme()
-  local g = state.opts.game()
   love.graphics.clear(0.03, 0.03, 0.04, 1)
-  local img = cart(g.version)
-  if img then
-    local iw, ih = img:getDimensions()
-    local s = math.max(SCREEN_W / iw, PANEL_H / ih)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, (SCREEN_W - iw * s) / 2, (PANEL_H - ih * s) / 2, 0, s, s)
-  else
-    love.graphics.setColor(t.accent)
-    love.graphics.rectangle("fill", 170, 40, 140, 190)
-    love.graphics.setColor(t.title)
-    love.graphics.setFont(font(14))
-    love.graphics.printf(g.name, 170, 120, 140, "center")
-  end
-  love.graphics.setColor(1, 1, 1, 0.85)
-  love.graphics.setFont(font(20))
-  love.graphics.print("<", 12, 122)
-  love.graphics.print(">", SCREEN_W - 26, 122)
-  love.graphics.setColor(0, 0, 0, 0.55)
-  love.graphics.rectangle("fill", 0, PANEL_H - 22, SCREEN_W, 22)
-  love.graphics.setColor(0.85, 0.85, 0.9, 1)
-  love.graphics.setFont(font(6))
-  love.graphics.printf("Based on the Pokemon Gen 1 Recompilation Project\nby BOIS CLUB GAMES, LLC - github.com/bryanthaboi/gen1recomp", 0, PANEL_H - 19, SCREEN_W, "center")
 end
 
 function M.update(dt)
   if not state.opts then return end
   local skin = state.opts.skin()
   local top = V.SKIN_TOP[skin]
-  -- halves take the frames' heights (same as the in-game skin)
+  -- the halves fill the display (hinge in the middle), else the frames' heights
   if lovepsp.layout and top then
-    lovepsp.layout(nil, V.frameHeight(top.file), V.frameHeight(V.SKIN_BOTTOM.file))
+    local ft, fb = V.fullSplit()
+    if ft then lovepsp.layout(nil, ft, fb)
+    else lovepsp.layout(nil, V.frameHeight(top.file), V.frameHeight(V.SKIN_BOTTOM.file)) end
   end
   local topH = lovepsp.split()
   state.base = topH
   -- the bottom screen is the panel
-  local bimg = V.skinImage(V.SKIN_BOTTOM.file)
-  if bimg then
-    local ox, sc = V.framePlacement(bimg)
-    local c = V.SKIN_BOTTOM.cut
-    state.panel = { x = ox + c[1] * sc, y = c[2] * sc, w = c[3] * sc, h = c[4] * sc }
+  do
+    local ox, sc, y0 = V.placeBottom()
+    if ox then
+      local c = V.SKIN_BOTTOM.cut
+      state.panel = { x = ox + c[1] * sc, y = y0 + c[2] * sc, w = c[3] * sc, h = c[4] * sc }
+    end
   end
   -- the launcher window sits in the top screen
   local timg = top and V.skinImage(top.file)
   if timg and lovepsp.gameRect then
-    local ox, sc = V.framePlacement(timg)
+    local ox, sc, y0 = V.placeTop(skin, topH)
     local c = top.cut
-    local cx, cy, cw, ch = ox + c[1] * sc, c[2] * sc, c[3] * sc, c[4] * sc
+    local cx, cy, cw, ch = ox + c[1] * sc, y0 + c[2] * sc, c[3] * sc, c[4] * sc
     local s = math.min(cw / SCREEN_W, ch / PANEL_H)
     local w, h = math.floor(SCREEN_W * s), math.floor(PANEL_H * s)
     lovepsp.gameRect(math.floor(cx + (cw - w) / 2), math.floor(cy + (ch - h) / 2), w, h)

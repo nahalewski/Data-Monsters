@@ -153,6 +153,7 @@ int plat_open_url(const char *url) { (void)url; return 0; }
 float plat_hinge(void) { return -1; }
 int plat_get_layout(void) { return 0; }
 void plat_screen_size(int *w, int *h) { *w = PLAT_SCREEN_W; *h = PLAT_SCREEN_H; }
+void plat_output_size(int *w, int *h) { *w = PLAT_SCREEN_W; *h = PLAT_SCREEN_H; }
 
 /* ------------------------------------------------------------ audio */
 #define AUDIO_FRAMES 1024

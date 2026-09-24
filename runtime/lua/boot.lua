@@ -735,6 +735,7 @@ love.lovepsp = {
   setOverlay = love.graphics._setOverlay, -- HUD canvas over the presented frame
   setBars = love.graphics._setBars,       -- side bars the game shrinks between
   screen = core.screen,     -- logical screen size (480x272, or 480x544 in the DS layout)
+  display = core.display,   -- physical pixels of the display (0,0 when unknown)
   layout = core.layout,     -- layout("single"|"ds") / layout()
   network = core.network,   -- true when http_get can work on this console
   http_get = core.http_get, -- http_get(url, save_relative_path[, token]) -> ok, err

@@ -162,16 +162,159 @@ local function frameHeight(file)
   return math.floor(ih * sc + 0.5)
 end
 
-local function font(size) return state.opts.font(size) end
+---------------------------------------------------------------- HD overlay
+-- The logical frame is 480 px wide (the PSP's), so on a phone the shell
+-- and the menus would be blown up four times.  The overlay canvas can be
+-- an integer multiple of the frame instead: the runtime blends it over the
+-- frame at the display's resolution.  The shell art then comes from the
+-- full-size copies in assets/skin3ds/hd and text from a TrueType font.
+local hdK = 1
+local function hudScale()
+  if not lovepsp.display then return 1 end
+  local ok, dw = pcall(lovepsp.display)
+  if not ok or not dw or dw <= 0 then return 1 end
+  return math.max(1, math.min(3, math.floor(dw / SCREEN_W)))
+end
+M.hudScale = hudScale
+
+-- the two halves fill the display: the hinge is its middle line
+local function fullSplit()
+  if not lovepsp.display then return nil end
+  local ok, dw, dh = pcall(lovepsp.display)
+  if not ok or not dw or dw <= 0 or not dh or dh <= 0 then return nil end
+  local lh = math.floor(SCREEN_W * dh / dw + 0.5)
+  if lh < 2 * 64 or lh > 720 then return nil end
+  local top = math.floor(lh / 2)
+  return top, lh - top
+end
+M.fullSplit = fullSplit
+
+-- the frames, placed: the top frame's bottom edge sits on the hinge (a
+-- shorter half crops the frame's top), the bottom frame hangs from it
+local function placeTop(skin, topH)
+  local top = SKIN_TOP[skin]
+  local img = top and skinImage(top.file)
+  if not img then return nil end
+  local ox, sc = framePlacement(img)
+  local _, ih = img:getDimensions()
+  local y0 = 0
+  if fullSplit() and topH then y0 = topH - math.floor(ih * sc + 0.5) end
+  return ox, sc, y0, img, top
+end
+local function placeBottom()
+  local img = skinImage(SKIN_BOTTOM.file)
+  if not img then return nil end
+  local ox, sc = framePlacement(img)
+  return ox, sc, 0, img
+end
+M.placeTop, M.placeBottom = placeTop, placeBottom
+
+local hdImages = {}
+local function skinImageHD(file)
+  if hdImages[file] == nil then
+    local ok, img = pcall(love.graphics.newImage, "assets/skin3ds/hd/" .. file)
+    hdImages[file] = ok and img or false
+    if ok then img:setFilter("linear", "linear") end
+  end
+  return hdImages[file] or nil
+end
+-- draws a skin file at x, y with the half-size scale sc, from the HD copy
+-- when the overlay is scaled
+local function drawSkin(file, x, y, sc)
+  local img = skinImage(file)
+  if not img then return end
+  local hd = hdK > 1 and skinImageHD(file)
+  love.graphics.setColor(1, 1, 1, 1)
+  if hd then
+    love.graphics.draw(hd, x, y, 0, sc * img:getWidth() / hd:getWidth())
+  else
+    love.graphics.draw(img, x, y, 0, sc, sc)
+  end
+end
+M.drawSkin = drawSkin
+-- a sprite from the button sheet (rect in half-size sheet pixels)
+local function drawSprite(x, y, rect, scale, tint)
+  local sheet = skinImage(SKIN_BOTTOM.sheet)
+  if not sheet then return end
+  local hd = hdK > 1 and skinImageHD(SKIN_BOTTOM.sheet)
+  local img, f = sheet, 1
+  if hd then img, f = hd, hd:getWidth() / sheet:getWidth() end
+  local w, h = img:getDimensions()
+  rect.hdq = rect.hdq or {}
+  local q = rect.hdq[f]
+  if not q then
+    q = love.graphics.newQuad(rect[1] * f, rect[2] * f, rect[3] * f, rect[4] * f, w, h)
+    rect.hdq[f] = q
+  end
+  love.graphics.setColor(tint or { 1, 1, 1, 1 })
+  love.graphics.draw(img, q, x, y, 0, scale / f, scale / f)
+end
+M.drawSprite = drawSprite
+
+-- text: the bitmap font below size 18 is one 8x8 face; on a scaled
+-- overlay the same calls draw a TrueType face at the display's resolution
+local realPrint, realPrintf = love.graphics.print, love.graphics.printf
+local ttfFonts = {}
+local function ttf(px)
+  if ttfFonts[px] == nil then
+    local ok, f = pcall(love.graphics.newFont, "assets/fonts/Vera.ttf", px)
+    ttfFonts[px] = ok and f or false
+  end
+  return ttfFonts[px] or nil
+end
+local function hdPx(size) return (size >= 18 and size or 9) * hdK end
+local function hdPrint(text, x, y, r, sx, sy)
+  local f = ttf(hdPx(M.curFontSize or 8))
+  if not f then return realPrint(text, x, y, r, sx, sy) end
+  local bmp = love.graphics.getFont()
+  love.graphics.setFont(f)
+  love.graphics.push()
+  love.graphics.scale(1 / hdK, 1 / hdK)
+  realPrint(text, (x or 0) * hdK, (y or 0) * hdK, r or 0, sx or 1, sy or sx or 1)
+  love.graphics.pop()
+  love.graphics.setFont(bmp)
+end
+local function hdPrintf(text, x, y, limit, align)
+  local f = ttf(hdPx(M.curFontSize or 8))
+  if not f then return realPrintf(text, x, y, limit, align) end
+  local bmp = love.graphics.getFont()
+  love.graphics.setFont(f)
+  love.graphics.push()
+  love.graphics.scale(1 / hdK, 1 / hdK)
+  realPrintf(text, (x or 0) * hdK, (y or 0) * hdK, (limit or SCREEN_W) * hdK, align)
+  love.graphics.pop()
+  love.graphics.setFont(bmp)
+end
+-- begin / end a scaled overlay pass: the caller has set its canvas
+function M.hdBegin(k)
+  hdK = k or 1
+  if hdK > 1 then
+    love.graphics.scale(hdK, hdK)
+    love.graphics.print, love.graphics.printf = hdPrint, hdPrintf
+  end
+end
+function M.hdEnd()
+  love.graphics.print, love.graphics.printf = realPrint, realPrintf
+  hdK = 1
+end
+-- an overlay canvas of the screen at the HD scale (recreated on change)
+function M.hdCanvas(holder, sw, sh, k)
+  if not holder.hud or holder.hudW ~= sw * k or holder.hudH ~= sh * k then
+    holder.hud = love.graphics.newCanvas(sw * k, sh * k)
+    holder.hudW, holder.hudH = sw * k, sh * k
+  end
+  return holder.hud
+end
+
+local function font(size) M.curFontSize = size return state.opts.font(size) end
 local visibleRows -- rows that fit a panel (defined with the input code below)
 local function log(msg) if state.opts.log then state.opts.log(msg) end end
 
 -- geometry of the two panels for the current layout
 local function panelRect(side)
   if state.ds and state.skin then
-    local img = skinImage(SKIN_BOTTOM.file)
-    if img then
-      local ox, sc = framePlacement(img)
+    local ox, sc = placeBottom()
+    if ox then
       local c = SKIN_BOTTOM.cut
       return ox + c[1] * sc, c[3] * sc
     end
@@ -656,9 +799,8 @@ end
 
 -- the frame's drawn buttons under the fingers -> injected pad buttons
 local function skinButtons(touches)
-  local img = skinImage(SKIN_BOTTOM.file)
-  if not img then return 0 end
-  local ox, sc = framePlacement(img)
+  local ox, sc = placeBottom()
+  if not ox then return 0 end
   local B = lovepsp.buttonBits
   local mask, home = 0, false
   for _, t in ipairs(touches or {}) do
@@ -687,33 +829,22 @@ local function skinButtons(touches)
 end
 
 local function drawSkinFrames()
-  local top = SKIN_TOP[state.skin]
-  local img = top and skinImage(top.file)
+  local ox, sc, y0, img, top = placeTop(state.skin, state.base)
+  if img then drawSkin(top.file, ox, y0 - state.base, sc) end
+  ox, sc, y0, img = placeBottom()
   if img then
-    local ox, sc = framePlacement(img)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, ox, -state.base, 0, sc, sc)
-  end
-  img = skinImage(SKIN_BOTTOM.file)
-  local sheet = skinImage(SKIN_BOTTOM.sheet)
-  if img then
-    local ox, sc = framePlacement(img)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, ox, 0, 0, sc, sc)
-    if not sheet then return end
-    local sw, sh = sheet:getDimensions()
+    drawSkin(SKIN_BOTTOM.file, ox, y0, sc)
     local B = lovepsp.buttonBits
     for _, b in ipairs(SKIN_BOTTOM.buttons) do
       local lit = false
       if b.kind == "dpad" then lit = state.held & (B.up | B.down | B.left | B.right) ~= 0
       elseif b.kind == "menu" then lit = state.homeDown
       else lit = state.held & (B[b.bits] or 0) ~= 0 end
-      b.quad = b.quad or love.graphics.newQuad(b.sprite[1], b.sprite[2], b.sprite[3], b.sprite[4], sw, sh)
       -- the sprite fills the socket: width 2r (a pill keeps its aspect)
-      local target = b.r * 2 * sc * (b.kind == "dpad" and 1.0 or 1.0)
+      local target = b.r * 2 * sc
       local qw, qh = b.sprite[3], b.sprite[4]
       local scale = (b.wide and (target * 2 / qw)) or (target / math.max(qw, qh))
-      local cx, cy = ox + b.x * sc, b.y * sc
+      local cx, cy = ox + b.x * sc, y0 + b.y * sc
       -- the sheet has no pressed frames: a press sinks the sprite (smaller,
       -- darker, pushed down); the stick and the pad lean the way they are held
       local dx, dy = 0, 0
@@ -726,8 +857,8 @@ local function drawSkinFrames()
       end
       local press = lit and 0.93 or 1
       local ps = scale * press
-      if lit then love.graphics.setColor(0.68, 0.68, 0.72, 1) else love.graphics.setColor(1, 1, 1, 1) end
-      love.graphics.draw(sheet, b.quad, cx - qw * ps / 2 + dx, cy - qh * ps / 2 + dy + (lit and 1.5 or 0), 0, ps, ps)
+      drawSprite(cx - qw * ps / 2 + dx, cy - qh * ps / 2 + dy + (lit and 1.5 or 0), b.sprite, ps,
+        lit and { 0.68, 0.68, 0.72, 1 } or nil)
     end
   end
 end
@@ -759,11 +890,10 @@ local function idleAnim(version)
 end
 
 local function drawIdle()
-  local img = skinImage(SKIN_BOTTOM.file)
-  if not img then return end
-  local ox, sc = framePlacement(img)
+  local ox, sc, y0 = placeBottom()
+  if not ox then return end
   local c = SKIN_BOTTOM.cut
-  local x, y, w, h = ox + c[1] * sc, c[2] * sc, c[3] * sc, c[4] * sc
+  local x, y, w, h = ox + c[1] * sc, y0 + c[2] * sc, c[3] * sc, c[4] * sc
   local version = (lovepsp.env and lovepsp.env.LOVEPSP_IDLE) or (state.opts and state.opts.version) or "red"
   local t = love.timer.getTime()
   local ct = currentTheme()
@@ -805,9 +935,9 @@ local function applyGameRect()
     if lovepsp.gameRect then lovepsp.gameRect() end
     return
   end
-  local ox, sc = framePlacement(img)
+  local ox, sc, y0 = placeTop(state.skin, state.base)
   local c = top.cut
-  local cx, cy, cw, ch = ox + c[1] * sc, c[2] * sc, c[3] * sc, c[4] * sc
+  local cx, cy, cw, ch = ox + c[1] * sc, y0 + c[2] * sc, c[3] * sc, c[4] * sc
   local gw, gh = 160, 144
   local s = math.min(cw / gw, ch / gh)
   local w, h = math.floor(gw * s), math.floor(gh * s)
@@ -1013,14 +1143,13 @@ end
 
 local function render()
   local sw, sh = state.sw, state.sh
-  if not state.hud or state.hudW ~= sw or state.hudH ~= sh then
-    state.hud = love.graphics.newCanvas(sw, sh)
-    state.hudW, state.hudH = sw, sh
-  end
+  local k = state.skin and hudScale() or 1
+  M.hdCanvas(state, sw, sh, k)
   love.graphics.push("all")
   love.graphics.setCanvas(state.hud)
   love.graphics.clear(0, 0, 0, 0)
   love.graphics.setBlendMode("alpha")
+  M.hdBegin(k)
   love.graphics.translate(0, state.base)
   if state.skin then
     drawSkinFrames()
@@ -1041,6 +1170,7 @@ local function render()
     love.graphics.setFont(font(9))
     love.graphics.printf(state.message, 124, state.panelH - 35, 232, "center")
   end
+  M.hdEnd()
   love.graphics.setCanvas()
   love.graphics.pop()
   lovepsp.setOverlay(state.hud)
@@ -1100,7 +1230,9 @@ function M.update(dt)
     if lovepsp.touchPad then lovepsp.touchPad(not newSkin and (state.opts.padDefault and state.opts.padDefault() or false) or false) end
     -- the halves take the frames' heights so both shells fill the width
     if lovepsp.layout then
-      if newSkin then lovepsp.layout(nil, frameHeight(SKIN_TOP[newSkin].file), frameHeight(SKIN_BOTTOM.file))
+      local ft, fb = fullSplit()
+      if newSkin and ft then lovepsp.layout(nil, ft, fb)
+      elseif newSkin then lovepsp.layout(nil, frameHeight(SKIN_TOP[newSkin].file), frameHeight(SKIN_BOTTOM.file))
       else lovepsp.layout(nil, PANEL_H, PANEL_H) end
     end
     if lovepsp.screen then
@@ -1111,9 +1243,8 @@ function M.update(dt)
     applyGameRect()
   end
   if state.skin then
-    local img = skinImage(SKIN_BOTTOM.file)
-    local _, sc = framePlacement(img)
-    state.panelY, state.panelH = SKIN_BOTTOM.cut[2] * sc, SKIN_BOTTOM.cut[4] * sc
+    local _, sc, y0 = placeBottom()
+    state.panelY, state.panelH = y0 + SKIN_BOTTOM.cut[2] * sc, SKIN_BOTTOM.cut[4] * sc
   else
     state.panelY, state.panelH = 0, PANEL_H
   end

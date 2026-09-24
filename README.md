@@ -232,6 +232,18 @@ Generation V sprites in github.com/PokeAPI/sprites by
 `tools/gif2sheet.sh`); Yellow's Pikachu surfs.  The mods panel and the
 START menu cover it while they are open.
 
+**Sharp shells, full screen**: the logical frame is 480 px wide (the
+PSP's), so on a phone it would be blown up four times.  The shell and the
+menus are drawn on an overlay up to three times that size which the
+runtime blends over the frame at the display's resolution
+(`lovepsp.display`, `plat_output_size`); the shell art comes from the
+full-size copies in `shell/assets/skin3ds/hd` and the text from Bitstream
+Vera (`shell/assets/fonts`) instead of the 8x8 bitmap font.  The two
+halves take the display's aspect with the hinge on its middle line: the
+top shell's bottom edge sits on the hinge and the bottom shell hangs
+from it, each cropped at the far edge when the screen is shorter than
+the art.  The game itself keeps its pixel look.
+
 **Pokemon Green**: the Japanese Green shares Blue's version exclusives
 (Blue is its western form), so Green runs on Blue's engine and imported
 data with its own cart, theme and saves; the Blue ROM import serves both

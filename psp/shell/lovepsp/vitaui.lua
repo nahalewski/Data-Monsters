@@ -30,10 +30,51 @@ local CIRCLE_Y = 30
 local SHOW_SECONDS = 4
 local FEED = "https://bryanthaboi.github.io/gen1recomp-mod-index/data/index.json"
 
+local state -- the panel state table, defined below the themes
+
+-- Themes: the panels' colours in the style of each game's box art / Game
+-- Boy, drawn like a Game Boy text box (double-line border, square rows,
+-- the runtime's pixel font).  "auto" follows the game being played.
+local THEMES = {
+  { id = "auto", name = "AUTO (match the game)" },
+  { id = "gameboy", name = "GAME BOY", accent = { 0.55, 0.67, 0.06 }, bg = { 0.06, 0.22, 0.06 }, text = { 0.88, 0.97, 0.60 }, title = { 0.06, 0.22, 0.06 }, dim = { 0.60, 0.72, 0.35 } },
+  { id = "red", name = "RED", accent = { 0.86, 0.18, 0.18 }, bg = { 0.14, 0.04, 0.04 }, text = { 1, 0.92, 0.88 }, title = { 1, 1, 1 }, dim = { 0.80, 0.55, 0.55 } },
+  { id = "green", name = "GREEN", accent = { 0.18, 0.62, 0.30 }, bg = { 0.03, 0.12, 0.06 }, text = { 0.90, 1, 0.90 }, title = { 1, 1, 1 }, dim = { 0.55, 0.78, 0.60 } },
+  { id = "blue", name = "BLUE", accent = { 0.22, 0.42, 0.88 }, bg = { 0.04, 0.06, 0.16 }, text = { 0.90, 0.94, 1 }, title = { 1, 1, 1 }, dim = { 0.60, 0.68, 0.90 } },
+  { id = "yellow", name = "YELLOW", accent = { 0.96, 0.80, 0.16 }, bg = { 0.16, 0.13, 0.03 }, text = { 1, 0.97, 0.85 }, title = { 0.16, 0.13, 0.03 }, dim = { 0.85, 0.78, 0.50 } },
+  { id = "gold", name = "GOLD", accent = { 0.86, 0.66, 0.18 }, bg = { 0.15, 0.11, 0.03 }, text = { 1, 0.96, 0.85 }, title = { 0.15, 0.11, 0.03 }, dim = { 0.82, 0.72, 0.50 } },
+  { id = "silver", name = "SILVER", accent = { 0.72, 0.75, 0.80 }, bg = { 0.10, 0.11, 0.13 }, text = { 0.95, 0.96, 1 }, title = { 0.10, 0.11, 0.13 }, dim = { 0.65, 0.68, 0.74 } },
+  { id = "crystal", name = "CRYSTAL", accent = { 0.32, 0.74, 0.90 }, bg = { 0.03, 0.10, 0.16 }, text = { 0.90, 0.98, 1 }, title = { 0.03, 0.10, 0.16 }, dim = { 0.55, 0.78, 0.88 } },
+  { id = "firered", name = "FIRERED", accent = { 0.95, 0.36, 0.14 }, bg = { 0.16, 0.06, 0.02 }, text = { 1, 0.94, 0.88 }, title = { 1, 1, 1 }, dim = { 0.85, 0.60, 0.48 } },
+  { id = "leafgreen", name = "LEAFGREEN", accent = { 0.45, 0.80, 0.32 }, bg = { 0.05, 0.14, 0.04 }, text = { 0.92, 1, 0.90 }, title = { 0.05, 0.14, 0.04 }, dim = { 0.62, 0.82, 0.55 } },
+}
+local THEME_BY_ID = {}
+for _, t in ipairs(THEMES) do THEME_BY_ID[t.id] = t end
+
 local ACCENT = { 0.25, 0.55, 1.0 }
 local PANEL_BG = { 0.09, 0.10, 0.14, 0.94 }
 
-local state = {
+local function currentTheme()
+  local id = state.opts and state.opts.theme and state.opts.theme() or "auto"
+  if id == "auto" then
+    local v = state.opts and state.opts.version or nil
+    id = (v and THEME_BY_ID[v]) and v or "gameboy"
+  end
+  local t = THEME_BY_ID[id] or THEME_BY_ID.gameboy
+  ACCENT[1], ACCENT[2], ACCENT[3] = t.accent[1], t.accent[2], t.accent[3]
+  PANEL_BG[1], PANEL_BG[2], PANEL_BG[3] = t.bg[1], t.bg[2], t.bg[3]
+  return t
+end
+
+local function cycleTheme()
+  local id = state.opts.theme and state.opts.theme() or "auto"
+  local idx = 1
+  for i, t in ipairs(THEMES) do if t.id == id then idx = i end end
+  local nxt = THEMES[idx % #THEMES + 1]
+  if state.opts.setTheme then state.opts.setTheme(nxt.id) end
+end
+
+state = {
   game = nil, opts = nil, attached = false,
   left = false, right = false, rightPage = "menu",
   circleTimer = 0, hud = nil, hudW = 0, hudH = 0, wasDown = false,
@@ -212,6 +253,7 @@ local function buildModRows()
     rows[#rows + 1] = { action = "update", label = "UPDATE FROM GITHUB" }
   end
   rows[#rows + 1] = { action = "apply", label = "APPLY (RESTART THE GAME)" }
+  rows[#rows + 1] = { action = "theme", label = "THEME" }
   rows[#rows + 1] = { action = "help", label = "INSTRUCTIONS" }
   return rows
 end
@@ -223,6 +265,7 @@ local function activateModRow(row)
     if state.modsChanged and state.opts.restart then state.opts.restart(state.opts.version)
     else state.progress = "Nothing changed yet" end
   elseif row.action == "help" then state.leftPage = "help"
+  elseif row.action == "theme" then cycleTheme()
   elseif row.entry and state.opts.toggleMod then
     state.opts.toggleMod(row.entry)
     state.modsChanged = true
@@ -699,14 +742,25 @@ local function circle(x, y, label)
 end
 
 local function panel(x, w, title)
-  love.graphics.setColor(PANEL_BG)
+  local t = currentTheme()
+  love.graphics.setColor(PANEL_BG[1], PANEL_BG[2], PANEL_BG[3], 0.96)
   love.graphics.rectangle("fill", x, 0, w, state.panelH)
+  -- Game Boy text-box border: a thick outer line and a thin inner one
   love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
-  love.graphics.rectangle("fill", x, 0, w, 26)
-  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.rectangle("fill", x, 0, w, 3)
+  love.graphics.rectangle("fill", x, state.panelH - 3, w, 3)
+  love.graphics.rectangle("fill", x, 0, 3, state.panelH)
+  love.graphics.rectangle("fill", x + w - 3, 0, 3, state.panelH)
+  love.graphics.rectangle("fill", x + 5, 5, w - 10, 1)
+  love.graphics.rectangle("fill", x + 5, state.panelH - 6, w - 10, 1)
+  love.graphics.rectangle("fill", x + 5, 5, 1, state.panelH - 10)
+  love.graphics.rectangle("fill", x + w - 6, 5, 1, state.panelH - 10)
+  -- title bar
+  love.graphics.rectangle("fill", x + 3, 3, w - 6, 24)
+  love.graphics.setColor(t.title)
   love.graphics.setFont(font(13))
-  love.graphics.print(title, x + 10, 6)
-  love.graphics.print("X", x + w - 18, 6)
+  love.graphics.print(title, x + 10, 8)
+  love.graphics.print("X", x + w - 18, 8)
 end
 
 local function drawRows(x, w, rows, scroll, cursor, selectedFn)
@@ -715,11 +769,13 @@ local function drawRows(x, w, rows, scroll, cursor, selectedFn)
   local visible = visibleRows()
   for i = scroll + 1, math.min(#rows, scroll + visible) do
     local row = rows[i]
-    love.graphics.setColor(1, 1, 1, i == cursor and 0.2 or 0.08)
-    love.graphics.rectangle("fill", x + 6, y - 2, w - 12, ROW_H - 4, 4, 4)
+    local t = currentTheme()
+    love.graphics.setColor(t.text[1], t.text[2], t.text[3], i == cursor and 0.16 or 0.06)
+    love.graphics.rectangle("fill", x + 8, y - 2, w - 16, ROW_H - 4)
     if i == cursor then
       love.graphics.setColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
-      love.graphics.rectangle("line", x + 6, y - 2, w - 12, ROW_H - 4, 4, 4)
+      love.graphics.rectangle("fill", x + 8, y - 2, 3, ROW_H - 4) -- the cursor: a pixel arrow bar
+      love.graphics.rectangle("line", x + 8, y - 2, w - 16, ROW_H - 4)
     end
     if selectedFn then selectedFn(row, x, y, w, i) end
     y = y + ROW_H
@@ -731,10 +787,10 @@ local function drawRight()
   if state.rightPage == "options" then
     panel(x, w, "OPTIONS")
     drawRows(x, w, buildOptionRows(), state.rightScroll, state.rightCursor, function(row, rx, ry, rw, rowIndex)
-      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setColor(currentTheme().text)
       marquee(row.label, rx + 10, ry, rw - 20, false)
       if row.value then
-        love.graphics.setColor(0.6, 0.85, 1, 1)
+        love.graphics.setColor(currentTheme().dim)
         love.graphics.setFont(font(9))
         marquee(row.value(), rx + 10, ry + 11, rw - 20, state.rightCursor == rowIndex)
         love.graphics.setFont(font(11))
@@ -758,7 +814,7 @@ local function drawRight()
   else
     panel(x, w, "MENU")
     drawRows(x, w, state.rows, state.rightScroll, state.rightCursor, function(row, rx, ry, rw, rowIndex)
-      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setColor(currentTheme().text)
       marquee(row.label, rx + 10, ry + 4, rw - 20, state.rightCursor == rowIndex)
     end)
   end
@@ -778,7 +834,7 @@ local function drawLeft()
   local x, w = panelRect("left")
   if state.leftPage == "help" then
     panel(x, w, "INSTRUCTIONS")
-    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setColor(currentTheme().text)
     local f = font(w > 200 and 10 or 8)
     love.graphics.setFont(f)
     local y = 34
@@ -796,22 +852,29 @@ local function drawLeft()
   drawRows(x, w, state.modRows, state.modScroll, state.leftCursor, function(row, rx, ry, rw, rowIndex)
     local active = state.leftCursor == rowIndex
     if row.action then
-      love.graphics.setColor(row.action == "apply" and not state.modsChanged and { 0.6, 0.6, 0.66, 1 } or { 0.75, 0.9, 1, 1 })
-      marquee(row.label, rx + 10, ry + 4, rw - 20, active)
+      local t = currentTheme()
+      love.graphics.setColor(row.action == "apply" and not state.modsChanged and t.dim or t.text)
+      local label = row.label
+      if row.action == "theme" then
+        local id = state.opts.theme and state.opts.theme() or "auto"
+        label = "THEME: " .. ((THEME_BY_ID[id] or THEMES[1]).name) .. (id == "auto" and (" > " .. t.name) or "")
+      end
+      marquee(label, rx + 10, ry + 4, rw - 20, active)
       return
     end
     local on = row.entry.enabled
-    love.graphics.setColor(on and { 0.35, 0.9, 0.5, 1 } or { 0.5, 0.5, 0.56, 1 })
-    love.graphics.rectangle("fill", rx + 10, ry + 3, 22, 12, 6, 6)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.circle("fill", on and rx + 26 or rx + 16, ry + 9, 5)
+    love.graphics.setColor(on and ACCENT or currentTheme().dim)
+    love.graphics.rectangle("fill", rx + 10, ry + 3, 22, 12)
+    love.graphics.setColor(on and currentTheme().title or currentTheme().bg)
+    love.graphics.rectangle("fill", on and rx + 22 or rx + 12, ry + 5, 8, 8)
+    love.graphics.setColor(currentTheme().text)
     marquee(row.label, rx + 38, ry + 1, rw - 48, active)
     love.graphics.setFont(font(8))
     if row.state == "error" then
       love.graphics.setColor(1, 0.45, 0.4, 1)
       marquee((row.error or "error"):gsub("\n", " "), rx + 38, ry + 12, rw - 48, active)
     else
-      love.graphics.setColor(0.6, 0.6, 0.66, 1)
+      love.graphics.setColor(currentTheme().dim)
       marquee((row.state or "") .. "  v" .. tostring(row.entry.version or ""), rx + 38, ry + 12, rw - 48, active)
     end
     love.graphics.setFont(font(11))

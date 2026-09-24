@@ -153,6 +153,12 @@ row at the bottom of the MODS panel shows this in the app:
 | D-pad, X, O | keep playing the game while a panel is open |
 | Select + R / Select + L | screen mode |
 
+**THEME**, a row at the bottom of the MODS panel, recolours both panels in
+a Game Boy text-box style (double-line border, square rows, the pixel
+font) to match a game: Game Boy green, Red, Green, Blue, Yellow, Gold,
+Silver, Crystal, FireRed or LeafGreen; AUTO (the default) follows the game
+being played. The choice is saved with the port's options.
+
 On the Vita the drawn on-screen D-pad/A/B is off (the console has real
 buttons); taps on panel rows still work. Text that does not fit a side
 panel row scrolls sideways (marquee) on the highlighted row. The "On-screen pad" option turns

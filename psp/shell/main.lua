@@ -235,7 +235,8 @@ local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "
                   touch = nil, -- nil: the runtime's default (on for the Vita)
                   layout = nil, -- nil: the runtime's default; "ds": game on top, controls below
                   pad = nil,    -- nil: the runtime's default (drawn pad on Android, off on the Vita)
-                  skin = "gbc" } -- DS layout skin: gbc (3DS, G1R sticker, GBC border), sticker, plain, small, off
+                  skin = "gbc", -- DS layout skin: gbc (3DS, G1R sticker, GBC border), sticker, plain, small, off
+                  theme = "auto" } -- panel colours: auto (the game's), gameboy, red, ... leafgreen
 
 local function saveOptions()
   local parts = {}
@@ -278,6 +279,7 @@ local function loadOptions()
     if t.layout == "ds" or t.layout == "single" then Options.layout = t.layout end
     if t.pad ~= nil then Options.pad = t.pad == "true" end
     if t.skin then Options.skin = t.skin end
+    if t.theme then Options.theme = t.theme end
   end
   applyOptions()
 end
@@ -803,6 +805,8 @@ local function bootGame(version)
         toggleMod = toggleMod,
         token = readGithubToken,
         skin = function() return Options.skin end,
+        theme = function() return Options.theme end,
+        setTheme = function(id) Options.theme = id saveOptions() end,
         padDefault = function()
           if Options.pad ~= nil then return Options.pad end
           return love._os ~= "Vita"

@@ -68,6 +68,8 @@ void plat_get_split(int *top, int *bottom);
 #define PLAT_MAX_LH 720
 /* foldable hinge angle in degrees from the host app, -1 = no hinge sensor */
 void plat_set_hinge(float degrees);
+/* open a web page in the host's browser (Android); 0 when unsupported */
+int plat_open_url(const char *url);
 float plat_hinge(void);
 int plat_get_layout(void);
 void plat_screen_size(int *w, int *h);

@@ -63,6 +63,12 @@ local Shell = {
 }
 local Game
 local VitaUI -- lovepsp.vitaui while a game runs with touch (Vita)
+local FoldUI -- lovepsp.foldui: the launcher on Android foldables (3DS skin)
+local Options -- the port's options table, defined with the options page below
+local function foldActive()
+  return FoldUI ~= nil and love._os == "Android" and lovepsp.layout and lovepsp.layout() == "ds"
+    and Options.skin ~= "off" and Shell.page ~= "game" and Shell.page ~= "lid"
+end
 local fonts = {}
 local drawChrome, font -- defined with the drawing code below
 local Mods, scanMods    -- the mods page, defined after the options
@@ -231,7 +237,7 @@ end
 local SCALING = { "none", "fit", "stretch" }
 local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", stretch = "WIDESCREEN (16:9)" }
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
-local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true,
+Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true,
                   touch = nil, -- nil: the runtime's default (on for the Vita)
                   layout = nil, -- nil: the runtime's default; "ds": game on top, controls below
                   pad = nil,    -- nil: the runtime's default (drawn pad on Android, off on the Vita)
@@ -320,6 +326,18 @@ local OPTION_ROWS = {
     function()
       if love._os == "PSP" or not lovepsp.layout then return end
       Options.layout = lovepsp.layout() == "ds" and "single" or "ds"
+    end },
+  { "Theme", function()
+      local ok, V = pcall(require, "lovepsp.vitaui")
+      local t = ok and V.themeFor(Options.theme, GAMES[Shell.cursor]) or nil
+      return (Options.theme == "auto" and "AUTO > " or "") .. (t and t.name or Options.theme)
+    end,
+    function(d)
+      local ok, V = pcall(require, "lovepsp.vitaui")
+      if not ok then return end
+      local ids = {}
+      for _, t in ipairs(V.THEMES) do ids[#ids + 1] = t.id end
+      Options.theme = cycle(ids, Options.theme, d == 0 and 1 or d)
     end },
   { "DS skin", function()
       if love._os ~= "Android" then return "Android foldables only" end
@@ -653,6 +671,7 @@ local function installBytecodeLoad()
 end
 
 local function bootGame(version)
+  if FoldUI then FoldUI.detach() end
   local t0 = love.timer.getTime()
   local marks = {}
   local function mark(name) marks[#marks + 1] = ("%s %.2fs"):format(name, love.timer.getTime() - t0) end
@@ -1115,6 +1134,40 @@ function love.load()
   love.graphics.setDefaultFilter("nearest", "nearest")
   loadOptions()
   refresh()
+  -- the foldable launcher (3DS skin): attach once, active while the phone is folded
+  if love._os == "Android" then
+    local okF, F = pcall(require, "lovepsp.foldui")
+    if okF then
+      FoldUI = F
+      local okB, info = pcall(require, "lovepsp.build_info")
+      FoldUI.attach({
+        font = font,
+        theme = function() return Options.theme end,
+        skin = function() return Options.skin end,
+        version = function() return GAMES[Shell.cursor] end,
+        game = function()
+          local v = GAMES[Shell.cursor]
+          local rom = Shell.roms[v]
+          return { version = v, name = GameVersion.info(v).displayName, ready = Shell.ready[v],
+                   rom = rom and rom.name or nil,
+                   save = love.filesystem.getInfo("save_" .. v .. ".lua") and "save_" .. v .. ".lua" or nil }
+        end,
+        primary = function() love.gamepadpressed(nil, "a") end,
+        moveGame = function(d) love.gamepadpressed(nil, d < 0 and "dpleft" or "dpright") end,
+        rescan = function() refresh() end,
+        mods = function() scanMods() return Mods.list end,
+        toggleMod = toggleMod,
+        rescanMods = function() love.filesystem.remove("mods_cache.lua") scanMods() end,
+        token = readGithubToken,
+        applyOptions = function() applyOptions() saveOptions() end,
+        versionLabel = okB and type(info) == "table" and ("v" .. tostring(info.port or "?") .. " / gen1recomp " .. tostring(info.upstream or ""):sub(1, 9)) or "",
+        portVersion = okB and type(info) == "table" and info.port or "",
+        romDir = core.baseDir(),
+      })
+    else
+      log("foldui: " .. tostring(F))
+    end
+  end
   -- a foldable that is not open yet shows the lid first
   local hinge = lovepsp.hinge and lovepsp.hinge() or -1
   if love._os == "Android" and hinge >= 0 and hinge < 60 then Shell.page = "lid" end
@@ -1211,6 +1264,12 @@ function love.update(dt)
     return
   elseif Shell.page == "import" then
     stepImport()
+    if foldActive() then FoldUI.update(dt) end
+  elseif foldActive() then
+    -- the foldable launcher takes taps and the pad; the classic pages stay
+    -- for the top screen (import progress, messages)
+    if Shell.page == "options" or Shell.page == "mods" then Shell.page = "cards" end
+    FoldUI.update(dt)
   else
     pollTaps()
   end
@@ -1219,6 +1278,7 @@ end
 function love.draw()
   if Shell.page == "lid" then return drawLid() end
   if Shell.page == "game" then return Game:draw() end
+  if Shell.page == "cards" and foldActive() then return FoldUI.drawTop() end
   if Shell.page == "import" then return drawImport() end
   if Shell.page == "message" then return drawMessage() end
   if Shell.page == "options" then return drawOptions() end
@@ -1289,6 +1349,7 @@ end
 function love.gamepadpressed(joystick, button)
   if Shell.page == "lid" then return lidDone() end
   if Shell.page == "game" then return Game:gamepadpressed(joystick, button) end
+  if Shell.page == "cards" and foldActive() and joystick ~= nil and FoldUI.press(button) then return end
   if Shell.page == "message" then
     if button == "a" or button == "b" then Shell.page = Shell.messageBack end
     return

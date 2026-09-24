@@ -149,6 +149,7 @@ void plat_set_layout(int ds) { (void)ds; }
 void plat_set_split(int top, int bottom) { (void)top; (void)bottom; }
 void plat_get_split(int *top, int *bottom) { *top = PLAT_SCREEN_H; *bottom = 0; }
 void plat_set_hinge(float d) { (void)d; }
+int plat_open_url(const char *url) { (void)url; return 0; }
 float plat_hinge(void) { return -1; }
 int plat_get_layout(void) { return 0; }
 void plat_screen_size(int *w, int *h) { *w = PLAT_SCREEN_W; *h = PLAT_SCREEN_H; }

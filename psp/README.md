@@ -215,6 +215,20 @@ reopens its audio device when the app regains focus.
 
 ### Android
 
+On a foldable held open, the launcher itself is the 3DS: the selected
+game's cartridge on the top screen (`shell/assets/carts`, art supplied by
+the port's author; left / right or the stick changes the game, tapping the
+cart or X plays or imports it) and a tabbed panel on the bottom screen
+(`shell/lovepsp/foldui.lua`): **GAMES** (status, save, update check,
+rescan), **MODS** (toggle the installed mods), **FIND** (browse the
+official mod index and install or update mods from their authors'
+releases), **ONLINE** (not part of this port) and **IMPORT** (where ROMs
+go, import the selected game). L / R switch tabs, X activates, O returns
+to GAMES. The update check reads the latest release of
+https://github.com/nahalewski/gen1recomp-Fold (the port's own repository;
+`VERSION` is the installed version) and, when a newer tag exists, opens
+that release page in the browser.
+
 The app is its own package, `com.nahalewski.g1rports` ("G1R Ports"), so
 installing it never touches or updates the official gen1recomp app.
 `ports/android/build.sh` builds `dist/android/gen1recomp.apk` with the

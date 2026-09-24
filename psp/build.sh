@@ -109,7 +109,7 @@ if [ -d "$HERE/mods_extra" ]; then
 fi
 cp "$UPSTREAM_DIR/LICENSE.MD" "$GAME/LICENSE-gen1recomp.md"
 cat > "$GAME/lovepsp/build_info.lua" <<EOF
-return { upstream = "$UPSTREAM_COMMIT", built = "$(date -u +%Y-%m-%dT%H:%MZ)" }
+return { upstream = "$UPSTREAM_COMMIT", built = "$(date -u +%Y-%m-%dT%H:%MZ)", port = "$(cat "$HERE/VERSION" 2>/dev/null | tr -d "[:space:]")" }
 EOF
 
 # Lua 5.4 bytecode: faster to load than source.  Debug info (line numbers,

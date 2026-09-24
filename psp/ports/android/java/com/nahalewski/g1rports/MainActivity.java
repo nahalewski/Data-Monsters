@@ -36,6 +36,17 @@ public class MainActivity extends SDLActivity implements SensorEventListener {
   public static native int nativeBottomHeight();
   public static native int nativeTopHeight();
 
+  /** called from the runtime: open a page (the port's release page for updates) */
+  public void openUrl(String url) {
+    try {
+      android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url));
+      i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+      startActivity(i);
+    } catch (Exception e) {
+      android.util.Log.w("lovepsp", "openUrl: " + e);
+    }
+  }
+
   private SensorManager sensors;
   private Sensor hinge;
   private DisplayManager displays;

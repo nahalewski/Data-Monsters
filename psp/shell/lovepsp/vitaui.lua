@@ -66,6 +66,12 @@ local function currentTheme()
   return t
 end
 
+function M.themeFor(id, version)
+  if id == "auto" or id == nil then id = (version and THEME_BY_ID[version]) and version or "gameboy" end
+  return THEME_BY_ID[id] or THEME_BY_ID.gameboy
+end
+M.THEMES = THEMES
+
 local function cycleTheme()
   local id = state.opts.theme and state.opts.theme() or "auto"
   local idx = 1
@@ -105,29 +111,29 @@ local HELP = {
 -- cutout, the panels in the bottom one's, and the frame's own buttons are
 -- the touch controls.  Source-pixel geometry of the half-size images.
 local SKIN_TOP = {
-  gbc = { file = "top_gbc.png", cut = { 170, 140, 419, 232 } }, -- sticker + Game Boy Color border (default)
-  sticker = { file = "top_sticker.png", cut = { 124, 118, 519, 277 } },
-  plain = { file = "top_plain.png", cut = { 126, 156, 471, 267 } },
-  small = { file = "top_small.png", cut = { 222, 170, 281, 239 } },
+  gbc = { file = "top_gbc.png", cut = { 159, 98, 419, 232 } }, -- sticker + Game Boy Color border (default)
+  sticker = { file = "top_sticker.png", cut = { 113, 74, 519, 277 } },
+  plain = { file = "top_plain.png", cut = { 109, 66, 471, 267 } },
+  small = { file = "top_small.png", cut = { 205, 80, 281, 239 } },
 }
 -- bottom shell without buttons (bottom_empty.png) plus the button sprites
 -- cut from the sheet (buttons.png, half size): each sprite is drawn into its
 -- socket and pressed ones are drawn darker and nudged, like a real press.
 -- cut = the screen area; sockets in half-size source pixels of the shell.
 local SKIN_BOTTOM = {
-  file = "bottom_empty.png", cut = { 173, 150, 378, 252 },
+  file = "bottom_empty.png", cut = { 159, 79, 378, 252 },
   sheet = "buttons.png",
   buttons = {
     -- name, socket centre x/y, socket radius (hit + draw size), sprite rect in the sheet, kind or pad bits
-    { name = "stick", x = 82, y = 205, r = 50, sprite = { 270, 228, 181, 182 }, kind = "dpad" },
-    { name = "pad", x = 82, y = 320, r = 48, sprite = { 37, 228, 184, 186 }, kind = "dpad" },
-    { name = "x", x = 634, y = 197, r = 21, sprite = { 381, 57, 133, 134 }, bits = "cross" },
-    { name = "y", x = 597, y = 235, r = 21, sprite = { 560, 58, 133, 133 }, bits = "circle" },
-    { name = "a", x = 670, y = 235, r = 21, sprite = { 35, 58, 132, 133 }, bits = "cross" },
-    { name = "b", x = 634, y = 272, r = 21, sprite = { 209, 58, 132, 133 }, bits = "circle" },
-    { name = "start", x = 600, y = 342, r = 14, sprite = { 515, 256, 62, 62 }, bits = "start" },
-    { name = "select", x = 600, y = 387, r = 14, sprite = { 515, 340, 62, 63 }, bits = "select" },
-    { name = "home", x = 356, y = 436, r = 25, sprite = { 288, 427, 144, 86 }, kind = "menu", wide = true },
+    { name = "stick", x = 68, y = 134, r = 50, sprite = { 270, 228, 181, 182 }, kind = "dpad" },
+    { name = "pad", x = 68, y = 249, r = 48, sprite = { 37, 228, 184, 186 }, kind = "dpad" },
+    { name = "x", x = 620, y = 126, r = 21, sprite = { 381, 57, 133, 134 }, bits = "cross" },
+    { name = "y", x = 583, y = 164, r = 21, sprite = { 560, 58, 133, 133 }, bits = "circle" },
+    { name = "a", x = 656, y = 164, r = 21, sprite = { 35, 58, 132, 133 }, bits = "cross" },
+    { name = "b", x = 620, y = 201, r = 21, sprite = { 209, 58, 132, 133 }, bits = "circle" },
+    { name = "start", x = 586, y = 271, r = 14, sprite = { 515, 256, 62, 62 }, bits = "start" },
+    { name = "select", x = 586, y = 316, r = 14, sprite = { 515, 340, 62, 63 }, bits = "select" },
+    { name = "home", x = 342, y = 365, r = 25, sprite = { 288, 427, 144, 86 }, kind = "menu", wide = true },
   },
 }
 local skinImages = {}
@@ -141,7 +147,7 @@ local function skinImage(file)
 end
 
 -- a frame fills the width of its half: the two shells meet at the hinge
--- like a real 3DS (top 480x320, bottom 480x360 for the supplied art)
+-- like a real 3DS (the art is trimmed to its shells: top 480x280, bottom 480x273)
 local function framePlacement(img)
   local iw = img:getDimensions()
   local sc = SCREEN_W / iw
@@ -295,6 +301,41 @@ local function findManifestDir(root, wantId, depth)
       if found then return found end
     end
   end
+end
+
+-- fetch the mod index feed -> table of entries, or nil, err
+function M.fetchFeed()
+  local Json = require("src.link.Json")
+  local feedUrl = (love._env and love._env.LOVEPSP_MOD_FEED) or FEED
+  local ok, err = lovepsp.http_get(feedUrl, "mods/.index.json")
+  if not ok then return nil, tostring(err) end
+  local raw = love.filesystem.read("mods/.index.json")
+  love.filesystem.remove("mods/.index.json")
+  local okj, feed = pcall(Json.decode, raw or "")
+  if not okj or type(feed) ~= "table" then return nil, "bad JSON" end
+  return feed.mods or feed
+end
+
+-- download a feed entry's latest zip and install it as mods/<dir>; returns ok, err
+function M.installFromFeed(entry, dir, token)
+  local latest = entry and entry.latest
+  local url = latest and type(latest.zip) == "table" and latest.zip.url
+  if not url then return false, "no release zip" end
+  removeTree("mods/.update")
+  love.filesystem.remove("mods/.dl.zip")
+  local okd, derr = lovepsp.http_get(url, "mods/.dl.zip", token)
+  if not okd then return false, tostring(derr) end
+  local n, uerr = lovepsp.unzip("mods/.dl.zip", "mods/.update")
+  love.filesystem.remove("mods/.dl.zip")
+  if not n then removeTree("mods/.update") return false, tostring(uerr) end
+  local found = findManifestDir("mods/.update", entry.id, 3)
+  if not found then removeTree("mods/.update") return false, "no manifest for " .. tostring(entry.id) end
+  removeTree("mods/" .. dir)
+  local okm = lovepsp.rename(found, "mods/" .. dir)
+  removeTree("mods/.update")
+  if not okm then return false, "cannot move into place" end
+  if state.opts and state.opts.invalidateMods then state.opts.invalidateMods() end
+  return true
 end
 
 -- one mod per resume: the panel redraws its progress line between steps
@@ -1028,5 +1069,9 @@ function M.update(dt)
     lovepsp.setOverlay(nil)
   end
 end
+
+-- shared with the foldable launcher (foldui.lua)
+M.SKIN_TOP, M.SKIN_BOTTOM = SKIN_TOP, SKIN_BOTTOM
+M.skinImage, M.framePlacement, M.frameHeight = skinImage, framePlacement, frameHeight
 
 return M

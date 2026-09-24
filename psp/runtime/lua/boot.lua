@@ -728,6 +728,7 @@ love.lovepsp = {
   gameRect = core.gameRect, -- gameRect(x, y, w, h) / gameRect(): where the game is presented
   split = core.split,       -- top, bottom heights of the DS halves; layout(mode, top, bottom) sets them
   hinge = core.hinge,       -- foldable hinge angle (degrees) or -1
+  openUrl = core.openUrl,   -- open a web page in the host browser (Android)
   rawInput = rawInput,      -- live pad state: buttons bitmask, ax, ay, rx, ry, lt, rt
   buttonBits = B,           -- names -> bits for rawInput.buttons
   touches = core.touches,   -- fingers on the screen, launcher taps

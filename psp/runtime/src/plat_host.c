@@ -287,6 +287,27 @@ void plat_set_split(int top, int bottom) {
 }
 void plat_get_split(int *top, int *bottom) { *top = g_top; *bottom = g_bottom; }
 void plat_set_hinge(float d) { g_hinge = d; }
+#ifdef __ANDROID__
+int plat_open_url(const char *url) {
+  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  jobject activity = (jobject)SDL_AndroidGetActivity();
+  jclass cls;
+  jmethodID mid;
+  jstring js;
+  if (!env || !activity) return 0;
+  cls = (*env)->GetObjectClass(env, activity);
+  mid = (*env)->GetMethodID(env, cls, "openUrl", "(Ljava/lang/String;)V");
+  if (!mid) { (*env)->DeleteLocalRef(env, cls); (*env)->DeleteLocalRef(env, activity); return 0; }
+  js = (*env)->NewStringUTF(env, url);
+  (*env)->CallVoidMethod(env, activity, mid, js);
+  (*env)->DeleteLocalRef(env, js);
+  (*env)->DeleteLocalRef(env, cls);
+  (*env)->DeleteLocalRef(env, activity);
+  return 1;
+}
+#else
+int plat_open_url(const char *url) { (void)url; return 0; }
+#endif
 float plat_hinge(void) { return g_hinge; }
 
 /* bottom half of the logical screen as 0xAARRGGBB ints (dual mode) */

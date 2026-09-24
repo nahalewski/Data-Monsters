@@ -78,7 +78,7 @@ cp -r "$UPSTREAM_DIR/data" "$GAME/data"
 mkdir -p "$GAME/tools" "$GAME/assets"
 # Gen 1 manifests (~1 MiB each) plus the tiny Gen 3 stubs, so a FireRed /
 # LeafGreen import can be tried with LOVEPSP_GAMES (see shell/main.lua)
-for v in "" _blue _yellow _firered _leafgreen; do
+for v in "" _blue _yellow _gold _silver _crystal _firered _leafgreen; do
   cp "$UPSTREAM_DIR/tools/rom_manifest$v.json" "$GAME/tools/"
 done
 for d in fonts skins touch logo; do
@@ -118,4 +118,5 @@ pack-pbp "$DIST/EBOOT.PBP" "$HERE/runtime/build/psp/PARAM.SFO" "$HERE/psp-assets
 rm -f "$DIST/game.pak"
 mkdir -p "$DIST/roms" "$DIST/save"
 cp "$HERE/README.md" "$DIST/README.md"
+cp "$HERE/GUIDE-PSP.md" "$DIST/GUIDE-PSP.md"
 echo "built $DIST/EBOOT.PBP ($(du -h "$DIST/EBOOT.PBP" | cut -f1))"

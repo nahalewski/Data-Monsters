@@ -22,6 +22,11 @@
 local CREDIT = "Based on the Pokemon Gen 1 Recompilation Project by BOIS CLUB "
   .. "GAMES, LLC (https://github.com/bryanthaboi/gen1recomp)"
 local TITLE = "GEN 1 RECOMP - PSP"
+local PORTED_BY = "Ported by nahalewski"
+-- card artwork supplied with the port (assets/cards/<size>/): <game>_n
+-- (normal), <game>_s (selected, glowing), ready / norom badges, empty cards
+local CARD_DIR = "assets/cards/psp/"
+local cards = {}
 local OPTIONS_FILE = "psp_options.lua"
 local SCREEN_W, SCREEN_H = 480, 272
 local GAME_W, GAME_H = 160, 144
@@ -334,7 +339,7 @@ local function bootGame(version)
   -- the engine lays out one 160x144 Game Boy screen; lovepsp scales the
   -- window to the PSP's 480x272 panel on present
   love.window.setMode(GAME_W, GAME_H)
-  fonts, Shell.art = {}, {}
+  fonts, Shell.art, cards = {}, {}, {}
   collectgarbage()
   if not Options.music then
     -- music is synthesized sample by sample in Lua, which is the single most
@@ -405,6 +410,17 @@ local function font(size)
   return fonts[size]
 end
 
+local function card(name)
+  local img = cards[name]
+  if img == nil then
+    local ok, loaded = pcall(love.graphics.newImage, CARD_DIR .. name .. ".png")
+    img = ok and loaded or false
+    if img then img:setFilter("nearest", "nearest") end
+    cards[name] = img
+  end
+  return img or nil
+end
+
 -- cartridge styling per game: plastic colour, label colour, label text
 -- colour, and the shell shape (gb / gbc / gba)
 local STYLE = {
@@ -449,13 +465,13 @@ local function drawChrome(subtitle)
   love.graphics.setFont(font(12))
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print(TITLE, 10, 8)
-  if subtitle then
-    love.graphics.setColor(1, 0.85, 0.85, 1)
-    love.graphics.printf(subtitle, 10, 8, SCREEN_W - 20, "right")
-  end
-  -- the credit the upstream licence requires in every launcher
+  love.graphics.setColor(1, 0.85, 0.85, 1)
+  love.graphics.printf(subtitle or PORTED_BY, 10, 8, SCREEN_W - 20, "right")
+  -- the credit the upstream licence requires in every launcher, plus the port's
+  love.graphics.setColor(0.85, 0.75, 0.55, 1)
+  love.graphics.printf(PORTED_BY, 10, SCREEN_H - 40, SCREEN_W - 20, "right")
   love.graphics.setColor(0.62, 0.64, 0.72, 1)
-  love.graphics.printf(CREDIT, 10, SCREEN_H - 30, SCREEN_W - 20)
+  love.graphics.printf(CREDIT, 10, SCREEN_H - 28, SCREEN_W - 20)
 end
 
 local function fitScale(img, maxW, maxH)
@@ -465,38 +481,50 @@ local function fitScale(img, maxW, maxH)
   return s, w * s, h * s
 end
 
--- a cartridge with the game's art (from the player's cache) on its label
+-- the game's card: the supplied artwork when the port ships it, else a
+-- drawn cartridge with the player's own extracted logo on the label
+local function drawArtCard(version, x, y, w, h, selected)
+  local img = card(version .. (selected and "_s" or "_n")) or card(version .. "_n")
+  if not img then return false end
+  local iw, ih = img:getDimensions()
+  local s = math.min(w / iw, (h - 16) / ih)
+  local dw, dh = iw * s, ih * s
+  love.graphics.setColor(1, 1, 1, selected and 1 or 0.72)
+  love.graphics.draw(img, x + (w - dw) / 2, y + (h - 16 - dh) / 2, 0, s, s)
+  h = h - 16
+  -- status badge centred under the card
+  local ready, rom = Shell.ready[version], Shell.roms[version]
+  local badge = ready and card("ready") or (not rom and card("norom")) or nil
+  local by = y + (h + dh) / 2 + 1
+  if badge then
+    local bw, bh = badge:getDimensions()
+    local bs = 13 / bh
+    love.graphics.setColor(1, 1, 1, selected and 1 or 0.8)
+    love.graphics.draw(badge, x + (w - bw * bs) / 2, by, 0, bs, bs)
+  elseif rom then
+    love.graphics.setFont(font(12))
+    love.graphics.setColor(0.12, 0.10, 0.05, 0.9)
+    love.graphics.rectangle("fill", x + w / 2 - 30, by, 60, 13, 3, 3)
+    love.graphics.setColor(1, 0.85, 0.35, 1)
+    love.graphics.printf("IMPORT", x + w / 2 - 30, by + 2, 60, "center")
+  end
+  return true
+end
+
 local function drawCartridge(version, x, y, w, h, selected)
+  if drawArtCard(version, x, y, w, h, selected) then return end
   local st = STYLE[version] or DEFAULT_STYLE
   local info = GameVersion.info(version)
   local ready, rom = Shell.ready[version], Shell.roms[version]
   local art = Shell.art[version] or {}
   local mul = selected and 1 or 0.62
-  -- shadow
   love.graphics.setColor(0, 0, 0, 0.35)
   love.graphics.rectangle("fill", x + 3, y + 4, w, h)
-  -- shell
   setColor(st.body, mul)
-  if st.gba then
-    love.graphics.polygon("fill", x + 4, y, x + w - 4, y, x + w, y + 4, x + w, y + h - 6,
-      x + w - 6, y + h, x + 6, y + h, x, y + h - 6, x, y + 4)
-  else
-    love.graphics.polygon("fill", x + 8, y, x + w - 8, y, x + w, y + 8, x + w, y + h, x, y + h, x, y + 8)
-  end
-  if st.gbc then
-    -- translucent look: lighter diagonal highlight
-    love.graphics.setColor(1, 1, 1, 0.10 * mul)
-    love.graphics.polygon("fill", x + 4, y + 4, x + w * 0.45, y + 4, x + 4, y + h * 0.7)
-  end
-  -- grip ridges
-  love.graphics.setColor(0, 0, 0, 0.22)
-  for i = 0, 2 do love.graphics.rectangle("fill", x + 8, y + 5 + i * 4, w - 16, 1.5) end
-  -- label
+  love.graphics.polygon("fill", x + 8, y, x + w - 8, y, x + w, y + 8, x + w, y + h, x, y + h, x, y + 8)
   local lx, ly, lw, lh = x + 8, y + 18, w - 16, h - 30
   setColor(st.label, mul)
   love.graphics.rectangle("fill", lx, ly, lw, lh)
-  love.graphics.setColor(0, 0, 0, 0.15)
-  love.graphics.rectangle("line", lx + 0.5, ly + 0.5, lw - 1, lh - 1)
   love.graphics.setColor(1, 1, 1, mul)
   if art.logo then
     local s, sw, sh = fitScale(art.logo, lw - 6, lh * 0.55)
@@ -505,27 +533,19 @@ local function drawCartridge(version, x, y, w, h, selected)
       local ms, mw, mh = fitScale(art.mascot, lw * 0.55, lh - sh - 4)
       love.graphics.draw(art.mascot, lx + lw - mw - 3, ly + lh - mh - 2, 0, ms, ms)
     end
-    love.graphics.setFont(font(12))
-    setColor(st.text, mul)
-    love.graphics.print(info.label:upper(), lx + 4, ly + lh - 12)
   else
     love.graphics.setFont(font(12))
     setColor(st.text, mul)
     love.graphics.printf("POKEMON", lx, ly + 6, lw, "center")
-    love.graphics.printf(info.launcherName and info.launcherName:upper() or info.label:upper(), lx, ly + 20, lw, "center")
-    love.graphics.printf("VERSION", lx, ly + 34, lw, "center")
+    love.graphics.printf(info.label:upper(), lx, ly + 20, lw, "center")
   end
-  -- status strip
   local status, col
   if ready then status, col = "READY", { 0.45, 0.95, 0.55 }
   elseif rom then status, col = "IMPORT", { 1, 0.85, 0.35 }
   else status, col = "NO ROM", { 0.62, 0.62, 0.68 } end
-  love.graphics.setColor(0, 0, 0, 0.35)
-  love.graphics.rectangle("fill", x + 8, y + h - 11, w - 16, 10)
   love.graphics.setFont(font(12))
   setColor(col, mul)
   love.graphics.printf(status, x, y + h - 10, w, "center")
-  -- selection frame
   if selected then
     love.graphics.setColor(1, 1, 1, 0.55 + 0.45 * math.abs(math.sin(Shell.blink * 4)))
     love.graphics.setLineWidth(2)
@@ -538,11 +558,13 @@ local function cardRect(i)
   local rows = math.ceil(#GAMES / COLS)
   local cols = math.min(COLS, #GAMES)
   local gap = 10
-  local areaY, areaH = 30, 170
+  local areaY, areaH = 30, 172
   local w = math.floor((SCREEN_W - 24 - (cols - 1) * gap) / cols)
   local h = math.floor((areaH - (rows - 1) * gap) / rows)
   if w > 140 then w = 140 end
   if h > 120 then h = 120 end
+  -- art cards are 16:9-ish and carry a badge underneath
+  if card(GAMES[1] .. "_n") then h = math.min(h, math.floor(w * 0.6) + 16) end
   local x0 = math.floor((SCREEN_W - (cols * w + (cols - 1) * gap)) / 2)
   local y0 = areaY + math.floor((areaH - (rows * h + (rows - 1) * gap)) / 2)
   local r, c = (i - 1) // cols, (i - 1) % cols
@@ -564,7 +586,7 @@ local function drawCards()
   if Shell.ready[v] then hint = "X: play " .. info.displayName
   elseif Shell.roms[v] then hint = "X: import " .. Shell.roms[v].name
   else hint = "No ROM: put your US " .. info.displayName .. " dump next to the EBOOT" end
-  love.graphics.printf(hint, 10, 206, SCREEN_W - 20, "center")
+  love.graphics.printf(hint, 10, 208, SCREEN_W - 20, "center")
   love.graphics.setColor(0.62, 0.62, 0.68, 1)
   local foot
   if GameVersion.generation(v) ~= 1 then
@@ -574,7 +596,7 @@ local function drawCards()
   else
     foot = "Select+R / Select+L: " .. (SCALING_NAMES[Options.scaling] or Options.scaling)
   end
-  love.graphics.printf(foot, 10, 220, SCREEN_W - 20, "center")
+  love.graphics.printf(foot, 10, 221, SCREEN_W - 20, "center")
 end
 
 local function drawOptions()

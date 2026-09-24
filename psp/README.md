@@ -14,6 +14,8 @@ engine's palette shaders. The engine's Lua code runs unmodified; it is fetched
 from upstream at build time, compiled to bytecode and packed into the
 EBOOT's `DATA.PSAR`.
 
+Player guide with supported models and troubleshooting: [GUIDE-PSP.md](GUIDE-PSP.md).
+
 ## Installing
 
 1. Copy the `gen1recomp/` folder from a release (or `psp/dist/gen1recomp`

@@ -105,7 +105,8 @@ def main():
     text(px, w, glyphs, "Based on the Pokemon Gen 1 Recompilation Project", 24, 206, 1, grey)
     text(px, w, glyphs, "by BOIS CLUB GAMES, LLC", 24, 218, 1, grey)
     text(px, w, glyphs, "github.com/bryanthaboi/gen1recomp", 24, 230, 1, grey)
-    text(px, w, glyphs, "Bring your own cartridge dump: roms/", 24, 250, 1, dim)
+    text(px, w, glyphs, "Bring your own cartridge dump: roms/", 24, 242, 1, dim)
+    text(px, w, glyphs, "Ported by nahalewski", 24, 256, 1, (220, 200, 150, 255))
     png(os.path.join(out, "PIC1.PNG"), w, h, px)
     print("wrote", out)
 

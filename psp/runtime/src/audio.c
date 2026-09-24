@@ -56,6 +56,14 @@ static int sd_gc(lua_State *L) {
   }
   return 0;
 }
+int16_t *lp_sounddata_samples(lua_State *L, int idx, int *frames, int *channels) {
+  SoundDataObj *o = (SoundDataObj *)lp_testobj(L, idx, &SoundData_type);
+  if (!o || !o->p) return NULL;
+  *frames = o->p->frames;
+  *channels = o->p->channels;
+  return o->p->s;
+}
+
 static SoundDataObj *push_sd(lua_State *L, Pcm *p) {
   SoundDataObj *o = (SoundDataObj *)lp_newobj(L, &SoundData_type, sizeof(SoundDataObj));
   o->p = p;

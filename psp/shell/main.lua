@@ -99,8 +99,43 @@ local ROM_DIRS = {
 
 -- Find canonical ROMs (matched by SHA-1, streamed so a 16 MiB GBA dump
 -- never has to sit in memory on a 32 MiB console).
+-- SHA-1 results keyed by name/size/mtime so a launcher start only hashes
+-- files that changed: a folder of GBA dumps otherwise costs seconds of
+-- Memory Stick reads and hashing on every boot
+local ROM_INDEX_FILE = "rom_index.lua"
+local romIndex
+
+local function loadRomIndex()
+  if romIndex then return romIndex end
+  romIndex = {}
+  local chunk = love.filesystem.load(ROM_INDEX_FILE)
+  local ok, t = pcall(chunk or function() end)
+  if ok and type(t) == "table" then romIndex = t end
+  return romIndex
+end
+
+local function saveRomIndex()
+  local parts = {}
+  for key, sha in pairs(romIndex or {}) do
+    parts[#parts + 1] = ("[%q] = %q,"):format(key, sha)
+  end
+  pcall(love.filesystem.write, ROM_INDEX_FILE, "return {" .. table.concat(parts) .. "}")
+end
+
+local function romSha1(path, name, info)
+  local index = loadRomIndex()
+  local key = ("%s|%d|%d"):format(name, info.size or 0, info.modtime or 0)
+  local sha = index[key]
+  if sha then return sha, false end
+  local raw = love.data.hashFile("sha1", path)
+  sha = raw and love.data.encode("string", "hex", raw)
+  if sha then index[key] = sha end
+  return sha, true
+end
+
 local function scanRoms()
   Shell.roms, Shell.unknown = {}, {}
+  local hashed = false
   for _, dir in ipairs(ROM_DIRS) do
     love.filesystem.unmount(dir.real)
     if love.filesystem.mount(dir.real, dir.mount, true) then
@@ -110,8 +145,8 @@ local function scanRoms()
           local path = dir.mount .. "/" .. name
           local info = love.filesystem.getInfo(path, "file")
           if info and info.size and info.size <= 32 * 1024 * 1024 then
-            local raw = love.data.hashFile("sha1", path)
-            local sha = raw and love.data.encode("string", "hex", raw)
+            local sha, fresh = romSha1(path, name, info)
+            hashed = hashed or fresh
             local version = sha and GameVersion.forSha1(sha)
             if version then
               if not Shell.roms[version] then
@@ -125,6 +160,7 @@ local function scanRoms()
       end
     end
   end
+  if hashed then saveRomIndex() end
 end
 
 -- card art comes from the player's imported cache, never from the archive
@@ -176,13 +212,12 @@ end
 local SCALING = { "none", "fit", "stretch" }
 local SCALING_NAMES = { none = "NATIVE (160x144)", fit = "FULLSCREEN (3:2)", stretch = "WIDESCREEN (16:9)" }
 local RATES = { "11025", "16000", "22050", "32000", "44100" }
--- Music defaults to off: the engine synthesizes it sample by sample in Lua,
--- which measured at ~370 us per sample on the PSP (hundreds of ms a frame).
-local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = false }
+local Options = { scaling = "fit", smooth = false, swapAB = false, audioRate = "22050", music = true }
 
 local function saveOptions()
   local parts = {}
   for k, v in pairs(Options) do
+    if k == "music" then k = "musicNative" end
     parts[#parts + 1] = ("%s = %q,"):format(k, tostring(v))
   end
   pcall(love.filesystem.write, OPTIONS_FILE, "return {" .. table.concat(parts) .. "}")
@@ -210,7 +245,9 @@ local function loadOptions()
     if t.smooth ~= nil then Options.smooth = t.smooth == "true" end
     if t.swapAB ~= nil then Options.swapAB = t.swapAB == "true" end
     if t.audioRate then Options.audioRate = t.audioRate end
-    if t.music ~= nil then Options.music = t.music == "true" end
+    -- "music" was written by builds whose default was off (Lua synth); the
+    -- native renderer made it playable, so the setting moved to a new key
+    if t.musicNative ~= nil then Options.music = t.musicNative == "true" end
   end
   applyOptions()
 end
@@ -226,6 +263,7 @@ local function deleteCache(version)
   removeTree(prefix .. "data/generated")
   removeTree(prefix .. "assets/generated")
   love.filesystem.remove(prefix .. require("src.import.CacheContract").MARKER_PATH)
+  love.filesystem.remove(prefix .. "lovepsp-bytecode")
   refresh()
 end
 
@@ -237,7 +275,7 @@ local OPTION_ROWS = {
     function() Options.smooth = not Options.smooth end },
   { "Confirm button", function() return Options.swapAB and "CIRCLE = A, CROSS = B" or "CROSS = A, CIRCLE = B" end,
     function() Options.swapAB = not Options.swapAB end },
-  { "Music", function() return Options.music and "ON (very slow on PSP: Lua synth)" or "OFF (recommended on PSP)" end,
+  { "Music", function() return Options.music and "ON (applies on next launch)" or "OFF (applies on next launch)" end,
     function() Options.music = not Options.music end },
   { "Music sample rate", function() return Options.audioRate .. " Hz (applies on next launch)" end,
     function(d) Options.audioRate = cycle(RATES, Options.audioRate, d == 0 and 1 or d) end },
@@ -367,6 +405,7 @@ local function startImport(version)
     removeTree(prefix .. "data/generated")
     removeTree(prefix .. "assets/generated")
     love.filesystem.remove(prefix .. CacheContract.MARKER_PATH)
+    love.filesystem.remove(prefix .. "lovepsp-bytecode")
     job.stage = "Reading import metadata"
     coroutine.yield()
     local savedPrefix = CacheFs.prefix
@@ -411,6 +450,7 @@ local function stepImport()
       Shell.import = nil
       collectgarbage()
       refresh()
+      if Shell.ready[job.version] then pcall(precompileCache, job.version) end
       local secs = math.floor(love.timer.getTime() - job.started)
       log(("import: %s finished in %ds"):format(job.version, secs))
       showMessage(("%s is ready (imported in %dm %02ds).\n\nPress X to continue.")
@@ -422,9 +462,89 @@ end
 
 ---------------------------------------------------------------- game
 
+-- The importer writes data/generated/*.lua as Lua source (2.6 MB for a Gen 1
+-- game) which the PSP has to parse on every boot.  Once a cache is complete
+-- we replace each file with stripped bytecode: half the bytes to read from
+-- the Memory Stick and about a quarter of the load time.  Data.load asks
+-- for text chunks, so bootGame widens the global load() for these files.
+local BYTECODE_MARKER = "lovepsp-bytecode"
+
+local function precompileCache(version)
+  local prefix = GameVersion.info(version).cachePrefix
+  if love.filesystem.getInfo(prefix .. BYTECODE_MARKER) then return end
+  local dir = prefix .. "data/generated"
+  local t0 = love.timer.getTime()
+  local converted = 0
+  -- the Memory Stick's FAT driver lists 8.3 names in upper case (MAPS.LUA);
+  -- the importer wrote lower-case names and FAT lookups ignore case
+  for _, item in ipairs(love.filesystem.getDirectoryItems(dir)) do
+    if item:lower():match("%.lua$") then
+      local path = dir .. "/" .. item:lower()
+      local bytes = love.filesystem.read(path)
+      if bytes and bytes:byte(1) ~= 27 then
+        local chunk, err = load(bytes, "@" .. path, "t", {})
+        if chunk then
+          local dump = string.dump(chunk, true)
+          chunk = nil
+          local ok, werr = love.filesystem.write(path, dump)
+          if ok then converted = converted + 1 else log("precompile: write " .. path .. ": " .. tostring(werr)) end
+        else
+          log("precompile: " .. tostring(err))
+        end
+      elseif not bytes then
+        log("precompile: cannot read " .. path)
+      end
+      bytes = nil
+      collectgarbage()
+    end
+  end
+  love.filesystem.write(prefix .. BYTECODE_MARKER, "1\n")
+  log(("precompiled %d data files for %s in %.1fs"):format(converted, version, love.timer.getTime() - t0))
+end
+
+local rawLoad = load
+local function installBytecodeLoad()
+  if load ~= rawLoad then return end
+  load = function(chunk, name, mode, env)
+    if mode == "t" and type(chunk) == "string" and chunk:byte(1) == 27
+        and type(name) == "string" and name:find("data/generated/", 1, true) then
+      mode = "bt"
+    end
+    return rawLoad(chunk, name, mode, env)
+  end
+end
+
 local function bootGame(version)
+  local t0 = love.timer.getTime()
+  local marks = {}
+  local function mark(name) marks[#marks + 1] = ("%s %.2fs"):format(name, love.timer.getTime() - t0) end
   Shell.page = "game"
   love.graphics.setDefaultFilter("nearest", "nearest")
+  local loadProf
+  if lovepsp.env.LOVEPSP_PROFILE == "1" then
+    -- where boot time goes: file loads, image decodes, module requires
+    loadProf = {}
+    local function wrapLoad(tbl, key, name)
+      local fn = tbl[key]
+      if type(fn) ~= "function" then return end
+      local slot = { time = 0, calls = 0 }
+      loadProf[name] = slot
+      tbl[key] = function(...)
+        local t1 = core.time()
+        local a, b = fn(...)
+        slot.time = slot.time + (core.time() - t1)
+        slot.calls = slot.calls + 1
+        return a, b
+      end
+    end
+    wrapLoad(love.filesystem, "load", "fs_load")
+    wrapLoad(love.filesystem, "read", "fs_read")
+    wrapLoad(love.filesystem, "getInfo", "fs_info")
+    wrapLoad(love.graphics, "newImage", "newImage")
+    wrapLoad(love.image, "newImageData", "newImageData")
+    wrapLoad(love.graphics, "newShader", "newShader")
+    wrapLoad(_G, "require", "require")
+  end
   pcall(function() require("src.core.RequireGuard").capture() end)
   GameVersion.set(version)
   local CacheFs = require("src.import.CacheFs")
@@ -433,16 +553,23 @@ local function bootGame(version)
   local SaveData = require("src.core.SaveData")
   SaveData.setCart(nil, nil)
   require("src.core.GameSpeed").setAllowed(nil)
+  pcall(precompileCache, version)
+  installBytecodeLoad()
   love.window.setTitle(GameVersion.info().displayName)
   -- the engine lays out one 160x144 Game Boy screen; lovepsp scales the
   -- window to the PSP's 480x272 panel on present
   love.window.setMode(GAME_W, GAME_H)
   fonts, Shell.art, cards = {}, {}, {}
   collectgarbage()
+  -- hand the per-sample chip synthesis to the runtime's native renderer
+  -- (lovepsp.chipnative / apu.c): the engine's Lua synth costs ~370 us a
+  -- sample on the PSP, far too slow for music; the C port renders the same
+  -- samples ~40x faster and keeps the song interpreter in Lua
+  do
+    local ok, err = pcall(function() return require("lovepsp.chipnative").install() end)
+    if not ok then log("chipnative: " .. tostring(err)) end
+  end
   if not Options.music then
-    -- music is synthesized sample by sample in Lua, which is the single most
-    -- expensive thing the engine does on a 333 MHz interpreter; sound
-    -- effects and cries are short one-shots and stay
     local ChipAudio = require("src.core.ChipAudio")
     ChipAudio.playMusic = function() return nil, "music disabled in PSP options" end
   end
@@ -455,8 +582,20 @@ local function bootGame(version)
     package.loaded["src.core.Game"] = nil
     Game = require("src.core.Game")
   end
+  mark("mount")
   Game:load({})
+  mark("load")
   collectgarbage()
+  mark("gc")
+  Shell.bootMarks = marks
+  if loadProf then
+    local parts = {}
+    for name, slot in pairs(loadProf) do
+      parts[#parts + 1] = ("%s %.2fs/%d"):format(name, slot.time, slot.calls)
+    end
+    table.sort(parts)
+    log("boot profile: " .. table.concat(parts, "; "))
+  end
   if lovepsp.env.LOVEPSP_PROFILE == "1" then
     -- wrap the engine's per-frame entry points; boot.lua prints the totals
     LOVEPSP_PROF = {}
@@ -498,7 +637,8 @@ local function bootGame(version)
       return r
     end
   end
-  log(("game: %s loaded, Lua heap %d KiB"):format(version, math.floor(collectgarbage("count"))))
+  log(("game: %s loaded, Lua heap %d KiB (%s)"):format(version, math.floor(collectgarbage("count")),
+    table.concat(marks, ", ")))
 end
 
 ---------------------------------------------------------------- drawing
@@ -749,9 +889,12 @@ end
 ---------------------------------------------------------------- love callbacks
 
 function love.load()
+  local t0 = love.timer.getTime()
   love.graphics.setDefaultFilter("nearest", "nearest")
   loadOptions()
   refresh()
+  log(("launcher: ready in %.2fs (%.2fs since power-on)"):format(
+    love.timer.getTime() - t0, love.timer.getTime()))
   -- a direct-boot shortcut: save/pokemon-love2d/autoboot.txt naming a version
   local auto = love.filesystem.read("autoboot.txt")
   auto = auto and auto:match("%a+")

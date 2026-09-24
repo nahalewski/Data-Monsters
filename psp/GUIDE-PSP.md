@@ -13,10 +13,18 @@ The build requests the full 64 MB on 2000-series and later hardware
 automatically; nothing to configure.
 
 Frame rates measured in PPSSPP with the PSP CPU model at 333 MHz: overworld
-~60 fps standing, ~30 fps while walking, intro movie 18–25 fps. **Music is off
-by default** — the engine synthesizes it in Lua, which the PSP cannot do in
-real time (turning it on drops the game to about 2 fps). Sound effects and
-cries still play.
+~50–60 fps standing, ~30 fps while walking, intro movie 18–25 fps, with
+music on. The engine synthesizes music and sound effects sample by sample
+in Lua, which the PSP cannot do in real time; this port renders the same
+waveforms in C inside the runtime (about 1.3 µs per sample at 22 kHz, a
+few percent of the CPU), so **music is on by default**. It can be switched
+off on the options page.
+
+The first launch of a freshly imported game converts its data files to Lua
+bytecode (a second or two, once) so later boots load faster; a game boots
+in about 2 seconds in the emulator. ROM hashes are remembered in
+`save/pokemon-love2d/rom_index.lua`, so the launcher only re-hashes files
+that changed.
 
 ## What you need
 
@@ -78,7 +86,8 @@ Launcher: D-pad/nub to pick a card, **X** play/import, **Triangle** options,
 
 - Screen mode / smooth scaling
 - Confirm button (Cross = A or Circle = A)
-- Music ON/OFF (leave OFF on PSP, see above) and the music sample rate
+- Music ON/OFF and the music sample rate (22050 Hz default; 44100 Hz
+  doubles the synthesizer's cost, 11025 Hz halves it)
 - Mods: upstream's example mods ship in the EBOOT, all **off** by default;
   toggle them here (X). Your own mods go in `save/pokemon-love2d/mods/<mod>/`
   (a folder with `manifest.json`, Lua source only) and appear in the same
@@ -111,8 +120,13 @@ copied between the PSP and a PC. Back it up before deleting the game folder.
   the EBOOT says why. Press START to exit.
 - **Purple error screen:** an engine error with a traceback, also written to
   `lovepsp.log`. Please attach that file when reporting.
-- **Slow:** make sure Music is OFF in options; NATIVE screen mode is
-  slightly cheaper to present than the scaled modes.
+- **Slow:** NATIVE screen mode is slightly cheaper to present than the
+  scaled modes; a lower music sample rate in options costs less CPU, and
+  Music OFF removes the synthesizer entirely. `lovepsp.log` records boot
+  timings (`launcher: ready in`, `game: ... loaded`) and, with
+  `LOVEPSP_PROFILE=1` in `save/pokemon-love2d/env.txt`, a per-frame profile.
+- **No music, only sound effects:** open the options page (Triangle) and
+  check Music is ON; builds before the native synthesizer stored it OFF.
 - **Gold/Silver/Crystal fail to load or freeze:** out of memory; these are
   experimental and need a 64 MB model.
 

@@ -349,7 +349,7 @@ static const luaL_Reg core_funcs[] = {
   {"time", c_time}, {"sleep", c_sleep}, {"poll", c_poll}, {"setMode", c_setMode},
   {"getMode", c_getMode}, {"present", c_present}, {"os", c_os}, {"baseDir", c_baseDir},
   {"saveDir", c_saveDir}, {"power", c_power}, {"memory", c_memory}, {"log", c_log},
-  {"screen", c_screen}, {NULL, NULL}};
+  {"screen", c_screen}, {"apu_render", lp_apu_render}, {"apu_copy", lp_apu_copy}, {NULL, NULL}};
 
 int luaopen_lovepsp(lua_State *L) {
   luaL_newlib(L, core_funcs);

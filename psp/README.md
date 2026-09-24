@@ -73,9 +73,18 @@ full 16:9 panel).
   and saving run through the upstream Gen 1 engine.
 - Gold/Silver/Crystal/FireRed/LeafGreen are not offered: their caches and
   engines do not fit the PSP's memory.
-- Music and sound effects are synthesized by the engine's Lua chip
-  synthesizer at 22 kHz. There is no worker thread on the PSP, so a song
-  change costs a few frames.
+- Music and sound effects: the engine's chip synthesizer renders sample by
+  sample in Lua, far too slow for the PSP, so the runtime carries a C port
+  of its waveform stage (`runtime/src/apu.c`, hooked in by
+  `shell/lovepsp/chipnative.lua`). The song interpreter stays in Lua; the C
+  side renders each channel up to its next event and writes the channel
+  state back, so output matches the Lua synth (verified against every song
+  and effect of Blue, Yellow and Gold). 22 kHz by default; there is no
+  worker thread on the PSP, so a song change costs a few frames.
+- Loading: after an import the data files of the cache are converted to
+  Lua bytecode on first boot (`lovepsp-bytecode` marker in the version
+  folder) and ROM hashes are cached in `rom_index.lua`; copying a cache to a
+  desktop install afterwards is not supported.
 - No online play, mods panel, save editor, updater or touch controls.
 - Shaders: only the engine's own palette shaders run (as native kernels);
   `SHADERFX`/CRT-style post-processing is unavailable.

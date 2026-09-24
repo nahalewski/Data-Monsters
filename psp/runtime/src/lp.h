@@ -32,6 +32,9 @@ void *lp_newobj(lua_State *L, const LPType *t, size_t size);
 void *lp_checkobj(lua_State *L, int idx, const LPType *t);
 void *lp_testobj(lua_State *L, int idx, const LPType *t);
 int lp_is_type(lua_State *L, int idx, const char *name);
+int16_t *lp_sounddata_samples(lua_State *L, int idx, int *frames, int *channels);
+int lp_apu_render(lua_State *L);
+int lp_apu_copy(lua_State *L);
 /* userdata user-value slot helpers: keep referenced objects alive */
 void lp_setref(lua_State *L, int obj, int slot, int val);
 
